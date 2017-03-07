@@ -628,6 +628,19 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 }
 
 #define MAX_BAND_TRY  2
+static long g_count1 = 0;
+static long g_count2 = 0;
+static long g_count3 = 0;
+void count_chain_v(){
+    g_count1++;
+    //fprintf(stderr, "count: %ld\n",g_count1);
+}
+
+void count_ndrop_v(){
+    g_count2++;
+    //fprintf(stderr, "count: %ld\n",g_count2);
+}
+
 
 void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
 {
@@ -658,16 +671,26 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 	// retrieve the reference sequence
 	rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
 	assert(c->rid == rid);
-
+    
+    // NEO:
+    // Generate str: str is an index,   high 32 bit is SW score (sorted)
+    //                                  low 32 bit is real index
 	srt = malloc(c->n * 8);
 	for (i = 0; i < c->n; ++i)
 		srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
-	ks_introsort_64(c->n, srt);
+	ks_introsort_64(c->n, srt);// NEO: srt in decending order
 
+    
+    
 	for (k = c->n - 1; k >= 0; --k) {
+        count_chain_v();
 		mem_alnreg_t *a;
 		s = &c->seeds[(uint32_t)srt[k]];
 
+        // NEO:
+        // should know how many seed would be drop in this place
+        
+        // Test if the seed is in future align
 		for (i = 0; i < av->n; ++i) { // test whether extension has been made before
 			mem_alnreg_t *p = &av->a[i];
 			int64_t rd;
@@ -685,6 +708,8 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 			w = max_gap < p->w? max_gap : p->w;
 			if (qd - rd < w && rd - qd < w) break;
 		}
+        // NEO:
+        // rescue the seed marked as overlap, if it would lead to a different result
 		if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
 			if (bwa_verbose >= 4)
 				printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
@@ -704,7 +729,8 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 			if (bwa_verbose >= 4)
 				printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
 		}
-
+        count_ndrop_v();
+        
 		a = kv_pushp(mem_alnreg_t, *av);
 		memset(a, 0, sizeof(mem_alnreg_t));
 		a->w = aw[0] = aw[1] = opt->w;
@@ -1016,6 +1042,7 @@ void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, 
 	}
 }
 
+//this function should be change to batch and be seperatedinto three part, whith the mem_chain2aln needed to be changed into SIMD
 mem_alnreg_v mem_align1_core(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
 {
 	int i;
@@ -1038,6 +1065,8 @@ mem_alnreg_v mem_align1_core(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 		free(chn.a[i].seeds);
 	}
 	free(chn.a);
+    fprintf(stderr, "count chain_v: %ld\n",g_count1);
+    fprintf(stderr, "count ndrop: %ld\n",g_count2);
 	regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
 	if (bwa_verbose >= 4) {
 		err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
@@ -1138,6 +1167,7 @@ typedef struct {
 	int64_t n_processed;
 } worker_t;
 
+//NEO: this function need to be change to batch awared mode.
 static void worker1(void *data, int i, int tid)
 {
 	worker_t *w = (worker_t*)data;
@@ -1186,8 +1216,12 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	w.aux = malloc(opt->n_threads * sizeof(smem_aux_t));
 	for (i = 0; i < opt->n_threads; ++i)
 		w.aux[i] = smem_aux_init();
+    /*
+     NEO: this statement need to change to batch mode
+     */
 	kt_for(opt->n_threads, worker1, &w, (opt->flag&MEM_F_PE)? n>>1 : n); // find mapping positions
-	for (i = 0; i < opt->n_threads; ++i)
+	
+    for (i = 0; i < opt->n_threads; ++i)
 		smem_aux_destroy(w.aux[i]);
 	free(w.aux);
 	if (opt->flag&MEM_F_PE) { // infer insert sizes if not provided
