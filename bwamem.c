@@ -628,18 +628,18 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 }
 
 #define MAX_BAND_TRY  2
-static long g_count1 = 0;
-static long g_count2 = 0;
-static long g_count3 = 0;
-void count_chain_v(){
-    g_count1++;
-    //fprintf(stderr, "count: %ld\n",g_count1);
-}
-
-void count_ndrop_v(){
-    g_count2++;
-    //fprintf(stderr, "count: %ld\n",g_count2);
-}
+//static long g_count1 = 0;
+//static long g_count2 = 0;
+//static long g_count3 = 0;
+//void count_chain_v(){
+//    g_count1++;
+//    //fprintf(stderr, "count: %ld\n",g_count1);
+//}
+//
+//void count_ndrop_v(){
+//    g_count2++;
+//    //fprintf(stderr, "count: %ld\n",g_count2);
+//}
 
 
 void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
@@ -683,7 +683,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
     
     
 	for (k = c->n - 1; k >= 0; --k) {
-        count_chain_v();
+ //       count_chain_v();
 		mem_alnreg_t *a;
 		s = &c->seeds[(uint32_t)srt[k]];
 
@@ -729,7 +729,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 			if (bwa_verbose >= 4)
 				printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
 		}
-        count_ndrop_v();
+  //      count_ndrop_v();
         
 		a = kv_pushp(mem_alnreg_t, *av);
 		memset(a, 0, sizeof(mem_alnreg_t));
@@ -1065,8 +1065,8 @@ mem_alnreg_v mem_align1_core(const mem_opt_t *opt, const bwt_t *bwt, const bntse
 		free(chn.a[i].seeds);
 	}
 	free(chn.a);
-    fprintf(stderr, "count chain_v: %ld\n",g_count1);
-    fprintf(stderr, "count ndrop: %ld\n",g_count2);
+ //   fprintf(stderr, "count chain_v: %ld\n",g_count1);
+ //   fprintf(stderr, "count ndrop: %ld\n",g_count2);
 	regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
 	if (bwa_verbose >= 4) {
 		err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
