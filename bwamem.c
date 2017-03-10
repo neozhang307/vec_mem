@@ -1168,6 +1168,15 @@ typedef struct {
 } worker_t;
 
 //NEO: this function need to be change to batch awared mode.
+static void worker_mod(void *data, int i, int tid)
+{
+    worker_t *w = (worker_t*)data;
+
+    if (bwa_verbose >= 4) printf("=====> Processing read '%s' <=====\n", w->seqs[i].name);
+    w->regs[i] = mem_align1_core(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+
+}
+
 static void worker1(void *data, int i, int tid)
 {
 	worker_t *w = (worker_t*)data;
@@ -1202,6 +1211,7 @@ static void worker2(void *data, int i, int tid)
 void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)
 {
 	extern void kt_for(int n_threads, void (*func)(void*,int,int), void *data, int n);
+    extern void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,int,int), void *data, int n);
 	worker_t w;
 	mem_pestat_t pes[4];
 	double ctime, rtime;
@@ -1219,8 +1229,9 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     /*
      NEO: this statement need to change to batch mode
      */
-	kt_for(opt->n_threads, worker1, &w, (opt->flag&MEM_F_PE)? n>>1 : n); // find mapping positions
-	
+	//kt_for(opt->n_threads, worker1, &w, (opt->flag&MEM_F_PE)? n>>1 : n); // find mapping positions
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:3, worker_mod, &w, n); // find mapping positions
+    
     for (i = 0; i < opt->n_threads; ++i)
 		smem_aux_destroy(w.aux[i]);
 	free(w.aux);

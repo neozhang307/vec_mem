@@ -59,6 +59,84 @@ void kt_for(int n_threads, void (*func)(void*,long,int), void *data, long n)
 	for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 }
 
+/************
+ * kt_for_batch() *
+ * Lingqi: *
+ * every thread would process a batch of data at a time *
+ * this design is aim for prosessing PE, as well as other usage *
+ * IMPORTANT: *
+ * should consider what would happen if data remaining cannot fill up a batch *
+ ************/
+
+struct kt_for_t_batch;
+
+typedef struct {
+    struct kt_for_t_batch *t;
+    long i;
+} ktf_worker_t_batch;
+
+typedef struct kt_for_t_batch {
+    int n_threads;
+    int s_batch;
+    long n;
+    ktf_worker_t_batch *w;
+    void (*func)(void*,long,int);
+    void *data;
+} kt_for_t_batch;
+
+static inline long steal_work_batch(kt_for_t_batch *t, int step)
+{
+    int i, min_i = -1;
+    long k, min = LONG_MAX;
+    for (i = 0; i < t->n_threads; ++i)
+        if (min > t->w[i].i) min = t->w[i].i, min_i = i;
+    k = __sync_fetch_and_add(&t->w[min_i].i, step);
+    return k >= t->n? -1 : k;
+}
+
+static void *ktf_worker_batch(void *data)
+{
+    ktf_worker_t_batch *w = (ktf_worker_t_batch*)data;
+    long i;
+    int step = w->t->n_threads*w->t->s_batch;
+    for (;;) {
+        i = __sync_fetch_and_add(&w->i, step);
+        
+        //process a batch of values
+        for(int j=0; i<w->t->n&&j<w->t->s_batch; j++,i++)
+        {
+            w->t->func(w->t->data, i, w - w->t->w);//compute it in
+        }
+        if (i >= w->t->n) break;
+    }
+    while ((i = steal_work_batch(w->t,step)) >= 0)
+        for(int j=0; i<w->t->n&&j<w->t->s_batch; j++,i++)
+        {
+            w->t->func(w->t->data, i, w - w->t->w);//compute it in
+        }
+    pthread_exit(0);
+}
+
+void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,long,int), void *data, long n)
+{
+    int i;
+    kt_for_t_batch t;
+    pthread_t *tid;
+    t.func = func, t.data = data, t.n_threads = n_threads, t.n = n;
+    
+    t.s_batch = batch_size>1?batch_size:1;
+    
+    t.w = (ktf_worker_t_batch*)alloca(n_threads * sizeof(ktf_worker_t_batch));
+    tid = (pthread_t*)alloca(n_threads * sizeof(pthread_t));
+    
+    for (i = 0; i < n_threads; ++i)
+        t.w[i].t = &t, t.w[i].i = i*batch_size;
+    
+    for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], 0, ktf_worker_batch, &t.w[i]);
+    for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
+}
+
+
 /*****************
  * kt_pipeline() *
  *****************/
