@@ -1042,62 +1042,6 @@ void mem_reg2sam(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, 
 	}
 }
 
-//this function should be change to batch and be seperatedinto three part, whith the mem_chain2aln needed to be changed into SIMD
-mem_chain_v mem_gen_chains(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
-
-{
-    int i;
-    mem_chain_v chn;
-    for (i = 0; i < l_seq; ++i) // convert to 2-bit encoding if we have not done so
-        seq[i] = seq[i] < 4? seq[i] : nst_nt4_table[(int)seq[i]];
-    
-    chn = mem_chain(opt, bwt, bns, l_seq, (uint8_t*)seq, buf);
-    chn.n = mem_chain_flt(opt, chn.n, chn.a);
-    mem_flt_chained_seeds(opt, bns, pac, l_seq, (uint8_t*)seq, chn.n, chn.a);
-    if (bwa_verbose >= 4) mem_print_chain(bns, &chn);
-    return chn;
-}
-mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn)
-{
-    int i;
-    mem_alnreg_v regs;
-    kv_init(regs);
-    for (i = 0; i < chn.n; ++i) {
-        mem_chain_t *p = &chn.a[i];
-        if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
-        mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
-        free(chn.a[i].seeds);
-    }
-    return regs;
-}
-mem_alnreg_v mem_aln2regs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_alnreg_v regs)
-{
-    int i;
-    regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
-    if (bwa_verbose >= 4) {
-        err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
-        for (i = 0; i < regs.n; ++i) {
-            mem_alnreg_t *p = &regs.a[i];
-            printf("** %d, [%d,%d) <=> [%ld,%ld)\n", p->score, p->qb, p->qe, (long)p->rb, (long)p->re);
-        }
-    }
-    for (i = 0; i < regs.n; ++i) {
-        mem_alnreg_t *p = &regs.a[i];
-        if (p->rid >= 0 && bns->anns[p->rid].is_alt)
-            p->is_alt = 1;
-    }
-    return regs;
-}
-
-mem_alnreg_v mem_align1_core_mod(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
-{
-    mem_chain_v chn =mem_gen_chains(opt, bwt, bns, pac, l_seq, seq, buf);
-    //below function should be run in batch together.
-    mem_alnreg_v regs = mem_chains2aln(opt, bwt, bns, pac, l_seq, seq, chn);
-    free(chn.a);
-    regs = mem_aln2regs(opt, bwt, bns, pac, l_seq, seq, regs);
-    return regs;
-}
 
 mem_alnreg_v mem_align1_core(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
 {
@@ -1223,15 +1167,7 @@ typedef struct {
 	int64_t n_processed;
 } worker_t;
 
-//NEO: this function need to be change to batch awared mode.
-static void worker_mod(void *data, int i, int tid)
-{
-    worker_t *w = (worker_t*)data;
 
-    if (bwa_verbose >= 4) printf("=====> Processing read '%s' <=====\n", w->seqs[i].name);
-    w->regs[i] = mem_align1_core_mod(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
-
-}
 
 static void worker1(void *data, int i, int tid)
 {
@@ -1264,11 +1200,120 @@ static void worker2(void *data, int i, int tid)
 	}
 }
 
+/*********************************************************/
+/*this segment is added by Lingqi Zhang*/
+
+//this function should be change to batch and be seperatedinto three part, whith the mem_chain2aln needed to be changed into SIMD
+mem_chain_v mem_gen_chains(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
+
+{
+    int i;
+    mem_chain_v chn;
+    for (i = 0; i < l_seq; ++i) // convert to 2-bit encoding if we have not done so
+        seq[i] = seq[i] < 4? seq[i] : nst_nt4_table[(int)seq[i]];
+    
+    chn = mem_chain(opt, bwt, bns, l_seq, (uint8_t*)seq, buf);
+    chn.n = mem_chain_flt(opt, chn.n, chn.a);
+    mem_flt_chained_seeds(opt, bns, pac, l_seq, (uint8_t*)seq, chn.n, chn.a);
+    if (bwa_verbose >= 4) mem_print_chain(bns, &chn);
+    return chn;
+}
+mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn)
+{
+    int i;
+    mem_alnreg_v regs;
+    kv_init(regs);
+    for (i = 0; i < chn.n; ++i) {
+        mem_chain_t *p = &chn.a[i];
+        if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
+        mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
+        free(chn.a[i].seeds);
+    }
+    return regs;
+}
+mem_alnreg_v mem_aln2regs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_alnreg_v regs)
+{
+    int i;
+    regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
+    if (bwa_verbose >= 4) {
+        err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
+        for (i = 0; i < regs.n; ++i) {
+            mem_alnreg_t *p = &regs.a[i];
+            printf("** %d, [%d,%d) <=> [%ld,%ld)\n", p->score, p->qb, p->qe, (long)p->rb, (long)p->re);
+        }
+    }
+    for (i = 0; i < regs.n; ++i) {
+        mem_alnreg_t *p = &regs.a[i];
+        if (p->rid >= 0 && bns->anns[p->rid].is_alt)
+            p->is_alt = 1;
+    }
+    return regs;
+}
+
+mem_alnreg_v mem_align1_core_mod(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
+{
+    mem_chain_v chn =mem_gen_chains(opt, bwt, bns, pac, l_seq, seq, buf);
+    //below function should be run in batch together.
+    mem_alnreg_v regs = mem_chains2aln(opt, bwt, bns, pac, l_seq, seq, chn);
+    free(chn.a);
+    regs = mem_aln2regs(opt, bwt, bns, pac, l_seq, seq, regs);
+    return regs;
+}
+
+
+typedef struct {
+    const mem_opt_t *opt;
+    const bwt_t *bwt;
+    const bntseq_t *bns;
+    const uint8_t *pac;
+    const mem_pestat_t *pes;
+    smem_aux_t **aux;
+    bseq1_t *seqs;
+    mem_alnreg_v *regs;
+    mem_chain_v *chn;
+    int64_t n_processed;
+} worker_t_mod;
+//NEO: this function need to be change to batch awared mode.
+static void worker_gen_chains(void *data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    w->chn[i] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+}
+//NEO: in the future, this part should be modified to run in GPU or CPU&GPU
+static void worker_chains2aln(void *data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    w->regs[i]  = mem_chains2aln(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i]);
+    
+}
+static void worker_aln2regs(void *data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+     w->regs[i] = mem_aln2regs(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->regs[i]);
+}
+
+
+static void worker_mod(void *data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    
+    if (bwa_verbose >= 4) printf("=====> Processing read '%s' <=====\n", w->seqs[i].name);
+    
+    w->chn[i] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+    //below function should be run in batch together.
+    w->regs[i]  = mem_chains2aln(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i]);
+    free(w->chn[i].a);
+    w->regs[i] = mem_aln2regs(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->regs[i]);
+    
+}
+/*********************************************************/
+/*********************************************************/
+/*this function is modified by Lingqi Zhang*/
 void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int64_t n_processed, int n, bseq1_t *seqs, const mem_pestat_t *pes0)
 {
 	extern void kt_for(int n_threads, void (*func)(void*,int,int), void *data, int n);
     extern void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,int,int), void *data, int n);
-	worker_t w;
+	worker_t_mod w;
 	mem_pestat_t pes[4];
 	double ctime, rtime;
 	int i;
@@ -1276,6 +1321,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	ctime = cputime(); rtime = realtime();
 	global_bns = bns;
 	w.regs = malloc(n * sizeof(mem_alnreg_v));
+    w.chn = malloc(n * sizeof(mem_chain_v));
 	w.opt = opt; w.bwt = bwt; w.bns = bns; w.pac = pac;
 	w.seqs = seqs; w.n_processed = n_processed;
 	w.pes = &pes[0];
@@ -1286,7 +1332,16 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
      NEO: this statement need to change to batch mode
      */
 	//kt_for(opt->n_threads, worker1, &w, (opt->flag&MEM_F_PE)? n>>1 : n); // find mapping positions
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_mod, &w, n); // find mapping positions
+    //kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_mod, &w, n); // find mapping positions
+    if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln, &w, n);
+    for(i=0; i<n; i++)
+    {
+        free(w.chn[i].a);
+    }
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_aln2regs, &w, n);
+    
     
     for (i = 0; i < opt->n_threads; ++i)
 		smem_aux_destroy(w.aux[i]);
@@ -1296,7 +1351,9 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 		else mem_pestat(opt, bns->l_pac, n, w.regs, pes); // otherwise, infer the insert size distribution from data
 	}
 	kt_for(opt->n_threads, worker2, &w, (opt->flag&MEM_F_PE)? n>>1 : n); // generate alignment
-	free(w.regs);
+    free(w.chn);
+    free(w.regs);
 	if (bwa_verbose >= 3)
 		fprintf(stderr, "[M::%s] Processed %d reads in %.3f CPU sec, %.3f real sec\n", __func__, n, cputime() - ctime, realtime() - rtime);
 }
+/*********************************************************/
