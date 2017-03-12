@@ -126,6 +126,7 @@ char **mem_gen_alt(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 			kputc("MIDSHN"[t.cigar[k]&0xf], &str);
 		}
 		kputc(',', &str); kputw(t.NM, &str);
+		kputc(',', &str); kputl(t.score, &str);
 		kputc(';', &str);
 		free(t.cigar);
 		kputsn(str.s, str.l, &aln[r]);
