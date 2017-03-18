@@ -640,8 +640,22 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 //    g_count2++;
 //    //fprintf(stderr, "count: %ld\n",g_count2);
 //}
-
-
+#define DEBUG
+#ifdef DEBUG
+static long count = 0;
+void add_count(long data)
+{
+    count+=data;
+}
+void reset()
+{
+    count=0;
+}
+void printcount()
+{
+    fprintf(stderr,"the count is %ld now\n",count);
+}
+#endif
 void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
 {
 	int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
@@ -678,8 +692,9 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 		if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
 		else rmax[0] = l_pac;
 	}
-    
-    
+#ifdef DEBUG
+    add_count(rmax[1]-rmax[0]);
+#endif
 	// retrieve the reference sequence
 	rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, should have a test beforehand
 	assert(c->rid == rid);
@@ -1357,10 +1372,15 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln, &w, n);
+#ifdef DEBUG
+    printcount();
+    reset();
+#endif
     for(i=0; i<n; i++)
     {
         free(w.chn[i].a);
     }
+    
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_aln2regs, &w, n);
     
     
