@@ -650,8 +650,18 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 	uint8_t *rseq = 0;
 	uint64_t *srt;
 
+    
+    /*
+     NEO:
+     @para rmax[2] {thread private}:
+                [0]: begin
+                [1]: end
+     
+     */
 	if (c->n == 0) return;
 	// get the max possible span
+    // NEO: should set on CPU
+    // NEO: can we orgnize query by max possible span?
 	rmax[0] = l_pac<<1; rmax[1] = 0;
 	for (i = 0; i < c->n; ++i) {
 		int64_t b, e;
@@ -668,11 +678,14 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 		if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
 		else rmax[0] = l_pac;
 	}
+    
+    
 	// retrieve the reference sequence
-	rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
+	rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, should have a test beforehand
 	assert(c->rid == rid);
     
     // NEO:
+    // external sorting
     // Generate str: str is an index,   high 32 bit is SW score (sorted)
     //                                  low 32 bit is real index
 	srt = malloc(c->n * 8);
@@ -681,15 +694,16 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 	ks_introsort_64(c->n, srt);// NEO: srt in decending order
 
     
-    
+    // NEO: should do motification in this part in the future
 	for (k = c->n - 1; k >= 0; --k) {
  //       count_chain_v();
 		mem_alnreg_t *a;
 		s = &c->seeds[(uint32_t)srt[k]];
 
+        
+        // NEO: this part is belong to CPU, should migrate this to the end of this function.
         // NEO:
         // should know how many seed would be drop in this place
-        
         // Test if the seed is in future align
 		for (i = 0; i < av->n; ++i) { // test whether extension has been made before
 			mem_alnreg_t *p = &av->a[i];
@@ -714,6 +728,8 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 			if (bwa_verbose >= 4)
 				printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
 					   k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+            
+            //NEO: block structure
 			for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
 				const mem_seed_t *t;
 				if (srt[i] == 0) continue;
@@ -722,14 +738,15 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 				if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
 				if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
 			}
-			if (i == c->n) { // no overlapping seeds; then skip extension
+			
+            
+            if (i == c->n) { // no overlapping seeds; then skip extension
 				srt[k] = 0; // mark that seed extension has not been performed
 				continue;
 			}
 			if (bwa_verbose >= 4)
 				printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
 		}
-  //      count_ndrop_v();
         
 		a = kv_pushp(mem_alnreg_t, *av);
 		memset(a, 0, sizeof(mem_alnreg_t));
@@ -754,6 +771,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 					printf("*** Left ref:   "); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
 					printf("*** Left query: "); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
 				}
+                //NEO: the most time consuming part
 				a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
 				if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
 				if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
@@ -774,6 +792,8 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 			qe = s->qbeg + s->len;
 			re = s->rbeg + s->len - rmax[0];
 			assert(re >= 0);
+            
+            //NEO: warp or block
 			for (i = 0; i < MAX_BAND_TRY; ++i) {
 				int prev = a->score;
 				aw[1] = opt->w << i;
@@ -786,6 +806,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 				if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
 				if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;
 			}
+            
 			// similar to the above
 			if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
 				a->qe = qe + qle, a->re = rmax[0] + re + tle;
