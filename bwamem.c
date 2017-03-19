@@ -1226,15 +1226,12 @@ static void worker2(void *data, int i, int tid)
 
 /*********************************************************/
 /*this segment is added by Lingqi Zhang*/
-
-void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
+void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass)
 {
     int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
     int64_t l_pac = bns->l_pac, rmax[2], tmp, max = 0;
     const mem_seed_t *s;
     uint8_t *rseq = 0;
-    uint64_t *srt;
-    
     
     /*
      NEO:
@@ -1266,31 +1263,24 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
 #ifdef DEBUG
     add_count(rmax[1]-rmax[0]);
 #endif
+    
+    
     // retrieve the reference sequence
     rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
     assert(c->rid == rid);
     
+    
     // NEO:
-    // external sorting
-    // Generate str: str is an index,   high 32 bit is SW score (sorted)
-    //                                  low 32 bit is real index
-    srt = malloc(c->n * 8);
-    for (i = 0; i < c->n; ++i)
-        srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
-    ks_introsort_64(c->n, srt);// NEO: srt in decending order
-    
-    
-    // NEO: should do modification in this part in the future
     //first pass
-    mem_alnreg_v *av_fistpass = malloc(sizeof(mem_alnreg_v));
-    kv_init(*av_fistpass);
-    kv_resize(mem_alnreg_t,*av_fistpass,c->n);
+   //mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
+   //kv_init(*av_firstpass);
+    //kv_resize(mem_alnreg_t,*av_firstpass,c->n);
     for (k = c->n - 1; k >= 0; --k) {
         mem_alnreg_t *a;
         // s = &c->seeds[(uint32_t)srt[k]];//the ranking does not important right now
         s = &c->seeds[k];
         
-        a = kv_pushp(mem_alnreg_t, *av_fistpass);
+        a = kv_pushp(mem_alnreg_t, *av_firstpass);
         memset(a, 0, sizeof(mem_alnreg_t));
         a->w = aw[0] = aw[1] = opt->w;
         a->score = a->truesc = -1;
@@ -1305,6 +1295,8 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
             tmp = s->rbeg - rmax[0];
             rs = malloc(tmp);
             for (i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
+            
+            //NEO: warp or block
             for (i = 0; i < MAX_BAND_TRY; ++i) {
                 int prev = a->score;
                 aw[0] = opt->w << i;
@@ -1318,6 +1310,7 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
                 if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
                 if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
             }
+            
             // check whether we prefer to reach the end of the query
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
                 a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
@@ -1368,15 +1361,30 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
         }
         a->w = aw[0] > aw[1]? aw[0] : aw[1];
         a->seedlen0 = s->len;
-        
-        
         a->frac_rep = c->frac_rep;
     }
+    
+    free(rseq);
+}
+void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass,mem_alnreg_v *av)
+{
+    int i, k;
+    const mem_seed_t *s;
     //second pass
+    // NEO:
+    // external sorting
+    // Generate str: str is an index,   high 32 bit is SW score (sorted)
+    //                                  low 32 bit is real index
+    uint64_t *srt;
+    srt = malloc(c->n * 8);
+    for (i = 0; i < c->n; ++i)
+        srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
+    ks_introsort_64(c->n, srt);// NEO: srt in decending order
+    
     for (k = c->n - 1; k >= 0; --k) {
         mem_alnreg_t *a;
         s = &c->seeds[(uint32_t)srt[k]];
-        mem_alnreg_t *a_pre = &av_fistpass->a[(uint32_t)srt[k]];
+        mem_alnreg_t *a_pre = &av_firstpass->a[(uint32_t)srt[k]];
         //mem_alnreg_t *a_prev = av_fistpass->a[(uint32_t)srt[k]];
         
         // NEO: this part is belong to CPU, should migrate this to the end of this function.
@@ -1430,8 +1438,19 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
         memcpy(a, a_pre, sizeof(mem_alnreg_t));
         
     }
-    free(av_fistpass);
-    free(srt); free(rseq);
+    free(srt);
+}
+
+void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
+{
+
+    mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
+    kv_init(*av_firstpass);
+    kv_resize(mem_alnreg_t,*av_firstpass,c->n);
+    mem_chain2aln_extent(opt, bns, pac, l_query, query, c, av_firstpass);
+    mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
+    free(av_firstpass);
+    
 }
 
 
