@@ -629,7 +629,7 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 
 #define MAX_BAND_TRY  2
 //#define DEBUG
-#ifdef DEBUG
+
 static long count = 0;
 void add_count(long data)
 {
@@ -643,7 +643,7 @@ void printcount()
 {
     fprintf(stderr,"the count is %ld now\n",count);
 }
-#endif
+
 void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
 {
 	int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
@@ -1226,24 +1226,20 @@ static void worker2(void *data, int i, int tid)
 
 /*********************************************************/
 /*this segment is added by Lingqi Zhang*/
-void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass)
+void mem_chain2maxspan(const mem_opt_t *opt, const mem_chain_t *c, int l_query, int64_t l_pac,  int64_t rmax[2])
 {
-    int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
-    int64_t l_pac = bns->l_pac, rmax[2], tmp, max = 0;
-    const mem_seed_t *s;
-    uint8_t *rseq = 0;
-    
     /*
      NEO:
      @para rmax[2] {thread private}:
      [0]: begin
      [1]: end
      */
-    
-    if (c->n == 0) return;
     // get the max possible span
     // NEO: should set on CPU
     // NEO: can we orgnize query by max possible span?
+    //NEO: potentially OOM, in every 10MB batch, average 67MB
+    int i;
+    int64_t max=0;
     rmax[0] = l_pac<<1; rmax[1] = 0;
     for (i = 0; i < c->n; ++i) {
         int64_t b, e;
@@ -1263,12 +1259,21 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
 #ifdef DEBUG
     add_count(rmax[1]-rmax[0]);
 #endif
+}
+
+
+void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass)
+{
+    int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
+    int64_t l_pac = bns->l_pac, rmax[2], tmp, max = 0;
+    const mem_seed_t *s;
+    uint8_t *rseq = 0;
     
+    mem_chain2maxspan(opt, c,  l_query, l_pac, rmax);
     
     // retrieve the reference sequence
-    rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
+    rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
     assert(c->rid == rid);
-    
     
     // NEO:
     //first pass
@@ -1302,8 +1307,8 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
                 aw[0] = opt->w << i;
                 if (bwa_verbose >= 4) {
                     int j;
-                    printf("*** Left ref:   "); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
-                    printf("*** Left query: "); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
+                    printf("*** Left ref %ld :   ",(long)tmp); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
+                    printf("*** Left query %ld : ", (long)s->qbeg); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
                 }
                 //NEO: the most time consuming part
                 a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
@@ -1443,7 +1448,7 @@ void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8
 
 void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
 {
-
+    if (c->n == 0) return;
     mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
     kv_init(*av_firstpass);
     kv_resize(mem_alnreg_t,*av_firstpass,c->n);
