@@ -628,19 +628,7 @@ static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 }
 
 #define MAX_BAND_TRY  2
-//static long g_count1 = 0;
-//static long g_count2 = 0;
-//static long g_count3 = 0;
-//void count_chain_v(){
-//    g_count1++;
-//    //fprintf(stderr, "count: %ld\n",g_count1);
-//}
-//
-//void count_ndrop_v(){
-//    g_count2++;
-//    //fprintf(stderr, "count: %ld\n",g_count2);
-//}
-#define DEBUG
+//#define DEBUG
 #ifdef DEBUG
 static long count = 0;
 void add_count(long data)
@@ -670,8 +658,8 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
      @para rmax[2] {thread private}:
                 [0]: begin
                 [1]: end
-     
      */
+    
 	if (c->n == 0) return;
 	// get the max possible span
     // NEO: should set on CPU
@@ -696,7 +684,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
     add_count(rmax[1]-rmax[0]);
 #endif
 	// retrieve the reference sequence
-	rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, should have a test beforehand
+	rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
 	assert(c->rid == rid);
     
     // NEO:
@@ -709,9 +697,8 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 	ks_introsort_64(c->n, srt);// NEO: srt in decending order
 
     
-    // NEO: should do motification in this part in the future
+    // NEO: should do modification in this part in the future
 	for (k = c->n - 1; k >= 0; --k) {
- //       count_chain_v();
 		mem_alnreg_t *a;
 		s = &c->seeds[(uint32_t)srt[k]];
 
@@ -1318,6 +1305,7 @@ static void worker_gen_chains(void *data, int i, int tid)
 //NEO: in the future, this part should be modified to run in GPU or CPU&GPU
 static void worker_chains2aln(void *data, int i, int tid)
 {
+    if (bwa_verbose >= 4) printf("=====> start chain process <=====\n");
     worker_t_mod *w = (worker_t_mod*)data;
     w->regs[i]  = mem_chains2aln(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i]);
     
