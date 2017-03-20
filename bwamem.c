@@ -1302,20 +1302,32 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
             for (i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
             
             //NEO: warp or block
-            for (i = 0; i < MAX_BAND_TRY; ++i) {
+//            for (i = 0; i < MAX_BAND_TRY; ++i) {
+//                int prev = a->score;
+//                aw[0] = opt->w << i;
+//                if (bwa_verbose >= 4) {
+//                    int j;
+//                    printf("*** Left ref %ld :   ",(long)tmp); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
+//                    printf("*** Left query %ld : ", (long)s->qbeg); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
+//                }
+//                //NEO: the most time consuming part
+//                a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
+//                if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
+//                if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
+//            }
+            {
                 int prev = a->score;
-                aw[0] = opt->w << i;
+                aw[0] = opt->w ;
                 if (bwa_verbose >= 4) {
                     int j;
                     printf("*** Left ref %ld :   ",(long)tmp); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
                     printf("*** Left query %ld : ", (long)s->qbeg); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
                 }
                 //NEO: the most time consuming part
-                a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
+                a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
                 if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
-                if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
+                //if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;//No need a break
             }
-            
             // check whether we prefer to reach the end of the query
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
                 a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
@@ -1334,17 +1346,29 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
             assert(re >= 0);
             
             //NEO: warp or block
-            for (i = 0; i < MAX_BAND_TRY; ++i) {
+//            for (i = 0; i < MAX_BAND_TRY; ++i) {
+//                int prev = a->score;
+//                aw[1] = opt->w << i;
+//                if (bwa_verbose >= 4) {
+//                    int j;
+//                    printf("*** Right ref:   "); for (j = 0; j < rmax[1] - rmax[0] - re; ++j) putchar("ACGTN"[(int)rseq[re+j]]); putchar('\n');
+//                    printf("*** Right query: "); for (j = 0; j < l_query - qe; ++j) putchar("ACGTN"[(int)query[qe+j]]); putchar('\n');
+//                }
+//                a->score = ksw_extend2(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[1], opt->pen_clip3, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
+//                if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
+//                if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;
+//            }
+            {
                 int prev = a->score;
-                aw[1] = opt->w << i;
+                aw[1] = opt->w;
                 if (bwa_verbose >= 4) {
                     int j;
                     printf("*** Right ref:   "); for (j = 0; j < rmax[1] - rmax[0] - re; ++j) putchar("ACGTN"[(int)rseq[re+j]]); putchar('\n');
                     printf("*** Right query: "); for (j = 0; j < l_query - qe; ++j) putchar("ACGTN"[(int)query[qe+j]]); putchar('\n');
                 }
-                a->score = ksw_extend2(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[1], opt->pen_clip3, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
+                a->score = ksw_extend2_mod(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
                 if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
-                if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;
+                //if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;//no need a break
             }
             
             // similar to the above
