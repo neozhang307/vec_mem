@@ -1260,7 +1260,25 @@ void mem_chain2maxspan(const mem_opt_t *opt, const mem_chain_t *c, int l_query, 
     add_count(rmax[1]-rmax[0]);
 #endif
 }
+typedef struct
+{
+    int qlen;
+    const uint8_t *query;
+    int rlen;
+    const uint8_t *ref;
+}swseq_t;
 
+typedef struct{
+    swseq_t *forward;
+    swseq_t *backward;//128
+    
+    int score[2];
+    
+    int max_off[2];//128
+    
+    int qle[2], tle[2];//128
+    int gtle[2], gscore[2];//128
+}swval_t;
 
 void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass)
 {
@@ -1276,58 +1294,100 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     assert(c->rid == rid);
     
     // NEO:
-    //first pass
-   //mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
-   //kv_init(*av_firstpass);
-    //kv_resize(mem_alnreg_t,*av_firstpass,c->n);
+    //first passs
+
+    swval_t * swvals = malloc(sizeof(swval_t)*c->n);
+    swseq_t * forward = malloc(sizeof(swval_t)*c->n);
+    swseq_t * backward = malloc(sizeof(swval_t)*c->n);
+    
+    //init sequence
     for (k = c->n - 1; k >= 0; --k) {
-        mem_alnreg_t *a;
-        // s = &c->seeds[(uint32_t)srt[k]];//the ranking does not important right now
         s = &c->seeds[k];
+        swval_t *swv = &swvals[k];
+        swseq_t *swf = &forward[k];
+        swseq_t *swb = &backward[k];
         
-        a = kv_pushp(mem_alnreg_t, *av_firstpass);
-        memset(a, 0, sizeof(mem_alnreg_t));
-        a->w = aw[0] = aw[1] = opt->w;
-        a->score = a->truesc = -1;
-        a->rid = c->rid;
-        
-        if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
         if (s->qbeg) { // left extension
             uint8_t *rs, *qs;
-            int qle, tle, gtle, gscore;
+            
             qs = malloc(s->qbeg);
             for (i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
             tmp = s->rbeg - rmax[0];
             rs = malloc(tmp);
             for (i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
             
-            //NEO: warp or block
-//            for (i = 0; i < MAX_BAND_TRY; ++i) {
-//                int prev = a->score;
-//                aw[0] = opt->w << i;
-//                if (bwa_verbose >= 4) {
-//                    int j;
-//                    printf("*** Left ref %ld :   ",(long)tmp); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
-//                    printf("*** Left query %ld : ", (long)s->qbeg); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
-//                }
-//                //NEO: the most time consuming part
-//                a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
-//                if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
-//                if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
-//            }
-            {
-                int prev = a->score;
-                aw[0] = opt->w ;
-                if (bwa_verbose >= 4) {
-                    int j;
-                    printf("*** Left ref %ld :   ",(long)tmp); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
-                    printf("*** Left query %ld : ", (long)s->qbeg); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
-                }
-                //NEO: the most time consuming part
-                a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
-                if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
-                //if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;//No need a break
-            }
+            swf->qlen = s->qbeg;
+            swf->query = qs;
+            swf->rlen = tmp;
+            swf->ref = rs;
+            
+            swv->forward = swf;
+            swv->score[0] =s->len * opt->a;
+        }
+        else
+        {
+            swv->forward = NULL;
+        }
+        
+        if (s->qbeg + s->len != l_query) { // right extension
+            int qle, tle, qe, re, gtle, gscore, sc0 = swv->score[0];
+            qe = s->qbeg + s->len;
+            re = s->rbeg + s->len - rmax[0];
+            assert(re >= 0);
+            
+            swb->qlen = l_query - qe;
+            swb->query = query + qe;
+            swb->rlen = rmax[1] - rmax[0] - re;
+            swb->ref = rseq + re;
+            swv->backward = swb;
+            swv->score[1] = sc0;
+        }
+        else
+        {
+            swv->backward=NULL;
+        }
+    }
+    
+    //SW computation
+    for (k = c->n - 1; k >= 0; --k) {
+        s = &c->seeds[k];
+        swval_t *swv = &swvals[k];
+        if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
+        if(NULL!=swv->forward)
+        {
+            swv->score[0] = ksw_extend2_mod(swv->forward->qlen, swv->forward->query, swv->forward->rlen,swv->forward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->score[0], &swv->qle[0], &swv->tle[0], &swv->gtle[0], &swv->gscore[0], &swv->max_off[0]);
+        }
+        else{
+            swv->score[0] =  s->len * opt->a;
+        }
+        if(NULL!=swv->backward)
+        {
+            swv->score[1] = ksw_extend2_mod(swv->backward->qlen, swv->backward->query, swv->backward->rlen, swv->backward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->score[0], &swv->qle[1], &swv->tle[1], &swv->gtle[1], &swv->gscore[1], &swv->max_off[1]);
+        }
+    }
+    
+    //postprocess:
+    for (k = c->n - 1; k >= 0; --k) {
+        s = &c->seeds[k];
+        swval_t *swv = &swvals[k];
+        mem_alnreg_t *a;
+        a = kv_pushp(mem_alnreg_t, *av_firstpass);
+        memset(a, 0, sizeof(mem_alnreg_t));
+        a->w = aw[0] = aw[1] = opt->w;
+        a->score = a->truesc = -1;
+        a->rid = c->rid;
+        
+        if(NULL!=swv->forward)
+        {
+            int qle, tle, gtle, gscore;
+            const uint8_t *rs, *qs;
+            a->score = swv->score[0];
+            qle = swv->qle[0];
+            tle = swv->tle[0];
+            gtle = swv->gtle[0];
+            gscore = swv->gscore[0];
+            max_off[0]=swv->max_off[0];
+            
             // check whether we prefer to reach the end of the query
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
                 a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
@@ -1336,41 +1396,26 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
                 a->qb = 0, a->rb = s->rbeg - gtle;
                 a->truesc = gscore;
             }
+            rs =swv->forward->ref;
+            qs = swv->forward->query;
             free(qs); free(rs);
-        } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
-        
-        if (s->qbeg + s->len != l_query) { // right extension
-            int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+        }
+        else{
+            a->score = a->truesc = s->len * opt->a;
+            a->qb = 0;
+            a->rb = s->rbeg;
+        }
+        if(NULL!=swv->backward)
+        {
+            int qle, tle, qe, re, gtle, gscore, sc0 = swv->score[0];
             qe = s->qbeg + s->len;
             re = s->rbeg + s->len - rmax[0];
-            assert(re >= 0);
-            
-            //NEO: warp or block
-//            for (i = 0; i < MAX_BAND_TRY; ++i) {
-//                int prev = a->score;
-//                aw[1] = opt->w << i;
-//                if (bwa_verbose >= 4) {
-//                    int j;
-//                    printf("*** Right ref:   "); for (j = 0; j < rmax[1] - rmax[0] - re; ++j) putchar("ACGTN"[(int)rseq[re+j]]); putchar('\n');
-//                    printf("*** Right query: "); for (j = 0; j < l_query - qe; ++j) putchar("ACGTN"[(int)query[qe+j]]); putchar('\n');
-//                }
-//                a->score = ksw_extend2(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[1], opt->pen_clip3, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
-//                if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
-//                if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;
-//            }
-            {
-                int prev = a->score;
-                aw[1] = opt->w;
-                if (bwa_verbose >= 4) {
-                    int j;
-                    printf("*** Right ref:   "); for (j = 0; j < rmax[1] - rmax[0] - re; ++j) putchar("ACGTN"[(int)rseq[re+j]]); putchar('\n');
-                    printf("*** Right query: "); for (j = 0; j < l_query - qe; ++j) putchar("ACGTN"[(int)query[qe+j]]); putchar('\n');
-                }
-                a->score = ksw_extend2_mod(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
-                if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
-                //if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;//no need a break
-            }
-            
+            a->score = swv->score[1];
+            qle = swv->qle[1];
+            tle = swv->tle[1];
+            gtle = swv->gtle[1];
+            gscore = swv->gscore[1];
+            max_off[1]=swv->max_off[1];
             // similar to the above
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
                 a->qe = qe + qle, a->re = rmax[0] + re + tle;
@@ -1379,9 +1424,10 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
                 a->qe = l_query, a->re = rmax[0] + re + gtle;
                 a->truesc += gscore - sc0;
             }
-        } else a->qe = l_query, a->re = s->rbeg + s->len;
-        if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
-        
+        }
+        else{
+            a->qe = l_query, a->re = s->rbeg + s->len;
+        }
         // compute seedcov
         for (i = 0, a->seedcov = 0; i < c->n; ++i) {
             const mem_seed_t *t = &c->seeds[i];
@@ -1391,9 +1437,15 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
         a->w = aw[0] > aw[1]? aw[0] : aw[1];
         a->seedlen0 = s->len;
         a->frac_rep = c->frac_rep;
+        if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
     }
     
+    free(swvals);
+    free(forward);
+    free(backward);
+
     free(rseq);
+    
 }
 void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass,mem_alnreg_v *av)
 {
