@@ -1631,21 +1631,23 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     query_rev= malloc(l_query);
     for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
     
-    
+    int64_t * rmaxs = malloc(sizeof(int64_t)*2*chn.n);
+    for(i=0; i<chn.n; i++)
+    {
+        int64_t l_pac = bns->l_pac;
+        mem_chain2maxspan(opt, &chn.a[i],  l_query, l_pac, &rmaxs[2*i]);
+    }
     
     for (i = 0; i < chn.n; ++i) {
-        mem_chain_t *p = &chn.a[i];
         //mem_chain2aln_mod(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
         //void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
-        const mem_chain_t *c = p;
+        const mem_chain_t *c = &chn.a[i];
         mem_alnreg_v *av = &regs;
-       
-        
         
         if (c->n == 0) continue;
         mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
-        int i,rid; // aw: actual bandwidth used in extension
-        int64_t l_pac = bns->l_pac, rmax[2];
+        int k,rid; // aw: actual bandwidth used in extension
+        int64_t rmax[2];
         uint8_t *rseq = 0;
         
         uint8_t *rseq_rev = 0;
@@ -1653,17 +1655,16 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         swseq_t * forward = malloc(sizeof(swval_t)*c->n);
         swseq_t * backward = malloc(sizeof(swval_t)*c->n);
         
-        mem_chain2maxspan(opt, c,  l_query, l_pac, rmax);
+        rmax[0]=rmaxs[2*i];
+        rmax[1]=rmaxs[2*i+1];
         rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
         assert(c->rid == rid);
         
         uint64_t rseq_len = rmax[1]-rmax[0];
         assert(rseq_len>0);
         rseq_rev = malloc(rseq_len);
-        for (i = 0; i < rseq_len; ++i) rseq_rev[i] = rseq[rseq_len - 1 - i];
-        
+        for (k = 0; k < rseq_len; ++k) rseq_rev[k] = rseq[rseq_len - 1 - k];
 
-        
         kv_init(*av_firstpass);
         kv_resize(mem_alnreg_t,*av_firstpass,c->n);
         
@@ -1691,11 +1692,11 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         
         free(rseq_rev);
         
-        free(p->seeds);
+        free(c->seeds);
     }
     
     free(query_rev);
-    
+    free(rmaxs);
     return regs;
 }
 
