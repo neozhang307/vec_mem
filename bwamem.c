@@ -1669,15 +1669,15 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     swval_t* g_swvals = malloc(sizeof(swval_t)*max_id);
     swseq_t * g_forward = malloc(sizeof(swval_t)*max_id);
     swseq_t * g_backward = malloc(sizeof(swval_t)*max_id);
+    mem_alnreg_t *g_av_firstpass = malloc(sizeof(mem_alnreg_t)*max_id);
     
+    //main loop
     for (i = 0; i < chn.n; ++i) {
-        //mem_chain2aln_mod(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
-        //void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
         const mem_chain_t *c = &chn.a[i];
         mem_alnreg_v *av = &regs;
         
         if (c->n == 0) continue;
-        mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
+        
         int64_t rmax[2];
         uint8_t *rseq = 0;
         uint8_t *rseq_rev = 0;
@@ -1685,42 +1685,36 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         swval_t * swvals = &g_swvals[index[i]];//malloc(sizeof(swval_t)*c->n);
         swseq_t * forward = &g_forward[index[i]];//malloc(sizeof(swval_t)*c->n);
         swseq_t * backward = &g_backward[index[i]];//malloc(sizeof(swval_t)*c->n);
-        
+        mem_alnreg_t *av_firstpass =&g_av_firstpass[index[i]];// malloc(sizeof(mem_alnreg_t)* c->n);
         rmax[0]=rmaxs[2*i];
         rmax[1]=rmaxs[2*i+1];
     
-        rseq = rseqs[i];//bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-        //assert(c->rid == rid);
+        rseq = rseqs[i];
         
         uint64_t rseq_len = rmax[1]-rmax[0];
         assert(rseq_len>0);
         rseq_rev = rseq_revs[i];
-        kv_init(*av_firstpass);
-        kv_resize(mem_alnreg_t,*av_firstpass,c->n);
         
         //first pass
-        //  mem_chain2aln_extent(opt, bns, pac, l_query, query, c, av_firstpass);
         {
             //init sequence
             mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, swvals, forward, backward);
             //SW computation [Theoretically Main Computation]
             mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
             //postprocess:
-            mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
+            mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
         }
         //second pass
-        mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass->a, av);
-        
-        free(av_firstpass->a);
-        free(av_firstpass);
-        
-        free(c->seeds);
+        mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
     }
     
+    for (i = 0; i < chn.n; ++i) {
+        free(chn.a[i].seeds);
+    }
     free(g_forward);
     free(g_backward);
     free(g_swvals);
-    
+    free(g_av_firstpass);
     for(int i=0; i<chn.n; i++)
     {
         free(rseqs[i]);
