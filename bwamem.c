@@ -1630,12 +1630,24 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     uint8_t *query_rev= 0;
     query_rev= malloc(l_query);
     for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
-    
+    //rmaxs
     int64_t * rmaxs = malloc(sizeof(int64_t)*2*chn.n);
     for(i=0; i<chn.n; i++)
     {
         int64_t l_pac = bns->l_pac;
         mem_chain2maxspan(opt, &chn.a[i],  l_query, l_pac, &rmaxs[2*i]);
+    }
+    //reference
+    uint8_t **rseqs = malloc(sizeof(uint8_t*)*chn.n);
+    for(int i=0; i<chn.n; i++)
+    {
+        int rid;
+        int64_t rmax[2];
+        rmax[0]=rmaxs[2*i];
+        rmax[1]=rmaxs[2*i+1];
+        rseqs[i] = bns_fetch_seq(bns, pac, &rmax[0], chn.a[i].seeds[0].rbeg, &rmax[1], &rid);
+        assert(chn.a[i].rid == rid);
+        
     }
     
     for (i = 0; i < chn.n; ++i) {
@@ -1657,8 +1669,10 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         
         rmax[0]=rmaxs[2*i];
         rmax[1]=rmaxs[2*i+1];
-        rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-        assert(c->rid == rid);
+    
+        
+        rseq = rseqs[i];//bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
+        //assert(c->rid == rid);
         
         uint64_t rseq_len = rmax[1]-rmax[0];
         assert(rseq_len>0);
@@ -1667,7 +1681,6 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
 
         kv_init(*av_firstpass);
         kv_resize(mem_alnreg_t,*av_firstpass,c->n);
-        
         
         //first pass
         //  mem_chain2aln_extent(opt, bns, pac, l_query, query, c, av_firstpass);
@@ -1679,7 +1692,6 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
             //postprocess:
             mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
         }
-        
         //second pass
         mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
         
@@ -1688,12 +1700,17 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         free(swvals);
         free(forward);
         free(backward);
-        free(rseq);
         
         free(rseq_rev);
         
         free(c->seeds);
     }
+    
+    for(int i=0; i<chn.n; i++)
+    {
+        free(rseqs[i]);
+    }
+    free(rseqs);
     
     free(query_rev);
     free(rmaxs);
