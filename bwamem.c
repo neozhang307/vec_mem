@@ -1623,21 +1623,31 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     int i;
     mem_alnreg_v regs;
     kv_init(regs);
+    
+    const uint8_t *query = (uint8_t*)seq;
+    int l_query = l_seq;
+    //rev query init
+    uint8_t *query_rev= 0;
+    query_rev= malloc(l_query);
+    for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
+    
+    
+    
     for (i = 0; i < chn.n; ++i) {
         mem_chain_t *p = &chn.a[i];
         //mem_chain2aln_mod(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
         //void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
         const mem_chain_t *c = p;
         mem_alnreg_v *av = &regs;
-        const uint8_t *query = (uint8_t*)seq;
-        int l_query = l_seq;
+       
+        
         
         if (c->n == 0) continue;
         mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
         int i,rid; // aw: actual bandwidth used in extension
         int64_t l_pac = bns->l_pac, rmax[2];
         uint8_t *rseq = 0;
-        uint8_t *query_rev= 0;
+        
         uint8_t *rseq_rev = 0;
         swval_t * swvals = malloc(sizeof(swval_t)*c->n);
         swseq_t * forward = malloc(sizeof(swval_t)*c->n);
@@ -1652,8 +1662,7 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         rseq_rev = malloc(rseq_len);
         for (i = 0; i < rseq_len; ++i) rseq_rev[i] = rseq[rseq_len - 1 - i];
         
-        query_rev= malloc(l_query);
-        for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
+
         
         kv_init(*av_firstpass);
         kv_resize(mem_alnreg_t,*av_firstpass,c->n);
@@ -1679,11 +1688,14 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         free(forward);
         free(backward);
         free(rseq);
-        free(query_rev);
+        
         free(rseq_rev);
         
         free(p->seeds);
     }
+    
+    free(query_rev);
+    
     return regs;
 }
 
