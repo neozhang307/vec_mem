@@ -1615,6 +1615,9 @@ mem_chain_v mem_gen_chains(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_
     if (bwa_verbose >= 4) mem_print_chain(bns, &chn);
     return chn;
 }
+
+
+
 mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn)
 {
     int i;
@@ -1622,12 +1625,70 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     kv_init(regs);
     for (i = 0; i < chn.n; ++i) {
         mem_chain_t *p = &chn.a[i];
-        if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
-        mem_chain2aln_mod(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
-        free(chn.a[i].seeds);
+        //mem_chain2aln_mod(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
+        //void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
+        const mem_chain_t *c = p;
+        mem_alnreg_v *av = &regs;
+        const uint8_t *query = (uint8_t*)seq;
+        int l_query = l_seq;
+        
+        if (c->n == 0) continue;
+        mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
+        int i,rid; // aw: actual bandwidth used in extension
+        int64_t l_pac = bns->l_pac, rmax[2];
+        uint8_t *rseq = 0;
+        uint8_t *query_rev= 0;
+        uint8_t *rseq_rev = 0;
+        swval_t * swvals = malloc(sizeof(swval_t)*c->n);
+        swseq_t * forward = malloc(sizeof(swval_t)*c->n);
+        swseq_t * backward = malloc(sizeof(swval_t)*c->n);
+        
+        mem_chain2maxspan(opt, c,  l_query, l_pac, rmax);
+        rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
+        assert(c->rid == rid);
+        
+        uint64_t rseq_len = rmax[1]-rmax[0];
+        assert(rseq_len>0);
+        rseq_rev = malloc(rseq_len);
+        for (i = 0; i < rseq_len; ++i) rseq_rev[i] = rseq[rseq_len - 1 - i];
+        
+        query_rev= malloc(l_query);
+        for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
+        
+        kv_init(*av_firstpass);
+        kv_resize(mem_alnreg_t,*av_firstpass,c->n);
+        
+        
+        //first pass
+        //  mem_chain2aln_extent(opt, bns, pac, l_query, query, c, av_firstpass);
+        {
+            //init sequence
+            mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, swvals, forward, backward);
+            //SW computation [Theoretically Main Computation]
+            mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
+            //postprocess:
+            mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
+        }
+        
+        //second pass
+        mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
+        
+        free(av_firstpass->a);
+        free(av_firstpass);
+        free(swvals);
+        free(forward);
+        free(backward);
+        free(rseq);
+        free(query_rev);
+        free(rseq_rev);
+        
+        free(p->seeds);
     }
     return regs;
 }
+
+
+
 mem_alnreg_v mem_aln2regs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_alnreg_v regs)
 {
     int i;
