@@ -1352,7 +1352,7 @@ void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uin
     }
 }
 
-void mem_chain2aln_postextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], swval_t * swvals, mem_alnreg_v *av_firstpass)
+void mem_chain2aln_postextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], swval_t * swvals, mem_alnreg_t *av_firstpass)
 {
     int i, k, aw[2]; // aw: actual bandwidth used in extension
     const mem_seed_t *s;
@@ -1362,7 +1362,7 @@ void mem_chain2aln_postextent(const mem_opt_t *opt, const bntseq_t *bns, const u
         s = &c->seeds[k];
         swval_t *swv = &swvals[k];
         mem_alnreg_t *a;
-        a = kv_pushp(mem_alnreg_t, *av_firstpass);
+        a = &av_firstpass[k];
         memset(a, 0, sizeof(mem_alnreg_t));
         a->w = aw[0] = aw[1] = opt->w;
         a->score = a->truesc = -1;
@@ -1463,7 +1463,7 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     //SW computation
     mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
     //postprocess:
-    mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
+    mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
     free(swvals);
     free(forward);
     free(backward);
@@ -1471,7 +1471,7 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     free(query_rev);
     free(rseq_rev);
 }
-void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass,mem_alnreg_v *av)
+void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_t *av_firstpass,mem_alnreg_v *av)
 {
     int i, k;
     const mem_seed_t *s;
@@ -1489,7 +1489,7 @@ void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     for (k = c->n - 1; k >= 0; --k) {
         mem_alnreg_t *a;
         s = &c->seeds[(uint32_t)srt[k]];
-        mem_alnreg_t *a_pre = &av_firstpass->a[(uint32_t)srt[k]];
+        mem_alnreg_t *a_pre = &av_firstpass[(uint32_t)srt[k]];
         //mem_alnreg_t *a_prev = av_fistpass->a[(uint32_t)srt[k]];
         
         // NEO: this part is belong to CPU, should migrate this to the end of this function.
@@ -1583,11 +1583,11 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
         //SW computation [Theoretically Main Computation]
         mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
         //postprocess:
-        mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
+        mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
     }
     
     //second pass
-    mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
+    mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass->a, av);
     
     free(av_firstpass->a);
     free(av_firstpass);
@@ -1706,10 +1706,10 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
             //SW computation [Theoretically Main Computation]
             mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
             //postprocess:
-            mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
+            mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
         }
         //second pass
-        mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
+        mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass->a, av);
         
         free(av_firstpass->a);
         free(av_firstpass);
