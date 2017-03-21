@@ -1589,7 +1589,7 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
     //second pass
     mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
     
-    
+    free(av_firstpass->a);
     free(av_firstpass);
     free(swvals);
     free(forward);
