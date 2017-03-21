@@ -1474,6 +1474,7 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     free(backward);
     free(rseq);
     free(query_rev);
+    free(rseq_rev);
 }
 void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass,mem_alnreg_v *av)
 {
