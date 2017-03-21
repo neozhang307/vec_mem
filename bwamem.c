@@ -1653,6 +1653,23 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         for (int k = 0; k < rseq_len; ++k) rseq_revs[i][k] = rseqs[i][rseq_len - 1 - k];
     }
     
+    //scan
+    size_t *index = malloc(sizeof(size_t)*(chn.n+1));
+    index[0]=0;
+    for(int i=1; i<=chn.n; i++)
+    {
+        const mem_chain_t *c = &chn.a[i-1];
+        size_t tmp_pre = index[i-1];
+        size_t tmp_n = c->n;
+        tmp_pre+=tmp_n;
+        index[i]=tmp_pre;
+    }
+    
+    size_t max_id =index[chn.n];
+    swval_t* g_swvals = malloc(sizeof(swval_t)*max_id);
+    swseq_t * g_forward = malloc(sizeof(swval_t)*max_id);
+    swseq_t * g_backward = malloc(sizeof(swval_t)*max_id);
+    
     for (i = 0; i < chn.n; ++i) {
         //mem_chain2aln_mod(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
         //void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
@@ -1663,16 +1680,15 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
         int64_t rmax[2];
         uint8_t *rseq = 0;
-        
         uint8_t *rseq_rev = 0;
-        swval_t * swvals = malloc(sizeof(swval_t)*c->n);
-        swseq_t * forward = malloc(sizeof(swval_t)*c->n);
-        swseq_t * backward = malloc(sizeof(swval_t)*c->n);
+        
+        swval_t * swvals = &g_swvals[index[i]];//malloc(sizeof(swval_t)*c->n);
+        swseq_t * forward = &g_forward[index[i]];//malloc(sizeof(swval_t)*c->n);
+        swseq_t * backward = &g_backward[index[i]];//malloc(sizeof(swval_t)*c->n);
         
         rmax[0]=rmaxs[2*i];
         rmax[1]=rmaxs[2*i+1];
     
-        
         rseq = rseqs[i];//bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
         //assert(c->rid == rid);
         
@@ -1697,12 +1713,13 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         
         free(av_firstpass->a);
         free(av_firstpass);
-        free(swvals);
-        free(forward);
-        free(backward);
         
         free(c->seeds);
     }
+    
+    free(g_forward);
+    free(g_backward);
+    free(g_swvals);
     
     for(int i=0; i<chn.n; i++)
     {
