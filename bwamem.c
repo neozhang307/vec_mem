@@ -1639,6 +1639,7 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     }
     //reference
     uint8_t **rseqs = malloc(sizeof(uint8_t*)*chn.n);
+    uint8_t **rseq_revs = malloc(sizeof(uint8_t*)*chn.n);
     for(int i=0; i<chn.n; i++)
     {
         int rid;
@@ -1647,7 +1648,9 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         rmax[1]=rmaxs[2*i+1];
         rseqs[i] = bns_fetch_seq(bns, pac, &rmax[0], chn.a[i].seeds[0].rbeg, &rmax[1], &rid);
         assert(chn.a[i].rid == rid);
-        
+        uint64_t rseq_len = rmax[1]-rmax[0];
+        rseq_revs[i] = malloc(rseq_len);
+        for (int k = 0; k < rseq_len; ++k) rseq_revs[i][k] = rseqs[i][rseq_len - 1 - k];
     }
     
     for (i = 0; i < chn.n; ++i) {
@@ -1658,7 +1661,6 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         
         if (c->n == 0) continue;
         mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
-        int k,rid; // aw: actual bandwidth used in extension
         int64_t rmax[2];
         uint8_t *rseq = 0;
         
@@ -1676,9 +1678,7 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         
         uint64_t rseq_len = rmax[1]-rmax[0];
         assert(rseq_len>0);
-        rseq_rev = malloc(rseq_len);
-        for (k = 0; k < rseq_len; ++k) rseq_rev[k] = rseq[rseq_len - 1 - k];
-
+        rseq_rev = rseq_revs[i];
         kv_init(*av_firstpass);
         kv_resize(mem_alnreg_t,*av_firstpass,c->n);
         
@@ -1701,16 +1701,16 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
         free(forward);
         free(backward);
         
-        free(rseq_rev);
-        
         free(c->seeds);
     }
     
     for(int i=0; i<chn.n; i++)
     {
         free(rseqs[i]);
+        free(rseq_revs[i]);
     }
     free(rseqs);
+    free(rseq_revs);
     
     free(query_rev);
     free(rmaxs);
