@@ -1279,10 +1279,10 @@ typedef struct{
     int qle[2], tle[2];//128
     int gtle[2], gscore[2];//128
 }swval_t;
-void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, int64_t rmax[2],  uint8_t *rseq, const mem_chain_t *c, swval_t * swvals, swseq_t * forward, swseq_t * backward)
+void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const uint8_t *query_rev, int64_t rmax[2], const uint8_t *rseq, const uint8_t *rseq_rev, const mem_chain_t *c, swval_t * swvals, swseq_t * forward, swseq_t * backward)
 {
-    int i, k, rid; // aw: actual bandwidth used in extension
-    int64_t l_pac = bns->l_pac, tmp;
+    int k; // aw: actual bandwidth used in extension
+    int64_t  tmp;
     const mem_seed_t *s;
     
     for (k = c->n - 1; k >= 0; --k) {
@@ -1292,14 +1292,13 @@ void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const ui
         swseq_t *swb = &backward[k];
         
         if (s->qbeg) { // left extension
-            uint8_t *rs, *qs;
+            const uint8_t  *qs;
+            const uint8_t *rs;
+
+            qs = &query_rev[l_query-s->qbeg];
             
-            qs = malloc(s->qbeg);
-            for (i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
             tmp = s->rbeg - rmax[0];
-            rs = malloc(tmp);
-            for (i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
-            
+            rs = &rseq_rev[rmax[1]-s->rbeg];
             swf->qlen = s->qbeg;
             swf->query = qs;
             swf->rlen = tmp;
@@ -1379,7 +1378,7 @@ void mem_chain2aln_postextent(const mem_opt_t *opt, const bntseq_t *bns, const u
         if(NULL!=swv->forward)
         {
             int qle, tle, gtle, gscore;
-            const uint8_t *rs, *qs;
+            
             a->score = swv->score[0];
             qle = swv->qle[0];
             tle = swv->tle[0];
@@ -1395,9 +1394,9 @@ void mem_chain2aln_postextent(const mem_opt_t *opt, const bntseq_t *bns, const u
                 a->qb = 0, a->rb = s->rbeg - gtle;
                 a->truesc = gscore;
             }
-            rs =swv->forward->ref;
-            qs = swv->forward->query;
-            free(qs); free(rs);
+         //   rs =swv->forward->ref;
+         //   qs = swv->forward->query;
+         //   free(qs); free(rs);
         }
         else{
             a->score = a->truesc = s->len * opt->a;
@@ -1441,31 +1440,40 @@ void mem_chain2aln_postextent(const mem_opt_t *opt, const bntseq_t *bns, const u
 }
 void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass)
 {
-    int rid; // aw: actual bandwidth used in extension
+    int i,rid; // aw: actual bandwidth used in extension
     int64_t l_pac = bns->l_pac, rmax[2];
     uint8_t *rseq = 0;
-    
+    uint8_t *query_rev= 0;
+    uint8_t *rseq_rev = 0;
     mem_chain2maxspan(opt, c,  l_query, l_pac, rmax);
     
     // retrieve the reference sequence
     rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
     assert(c->rid == rid);
     
+    uint64_t rseq_len = rmax[1]-rmax[0];
+    assert(rseq_len>0);
+    rseq_rev = malloc(rseq_len);
+    for (i = 0; i < rseq_len; ++i) rseq_rev[i] = rseq[rseq_len - 1 - i];
+    
+    query_rev= malloc(l_query);
+    for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
+    
     // NEO:
     swval_t * swvals = malloc(sizeof(swval_t)*c->n);
     swseq_t * forward = malloc(sizeof(swval_t)*c->n);
     swseq_t * backward = malloc(sizeof(swval_t)*c->n);
     //init sequence
-    mem_chain2aln_preextent(opt, bns, pac, l_query, query, rmax,rseq, c, swvals, forward, backward);
+    mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, swvals, forward, backward);
     //SW computation
-    mem_chain2aln_swextent(opt, bns, pac, l_query,query, c, swvals);
+    mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
     //postprocess:
     mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
     free(swvals);
     free(forward);
     free(backward);
     free(rseq);
-    
+    free(query_rev);
 }
 void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass,mem_alnreg_v *av)
 {
