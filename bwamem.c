@@ -1433,46 +1433,7 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
         if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
     }
 }
-void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av_firstpass)
-{
-    int i,rid; // aw: actual bandwidth used in extension
-    int64_t l_pac = bns->l_pac, rmax[2];
-    uint8_t *rseq = 0;
-    uint8_t *query_rev= 0;
-    uint8_t *rseq_rev = 0;
-    swval_t * swvals = malloc(sizeof(swval_t)*c->n);
-    swseq_t * forward = malloc(sizeof(swval_t)*c->n);
-    swseq_t * backward = malloc(sizeof(swval_t)*c->n);
-    
-    mem_chain2maxspan(opt, c,  l_query, l_pac, rmax);
-    
-    // retrieve the reference sequence
-    rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-    assert(c->rid == rid);
-    
-    uint64_t rseq_len = rmax[1]-rmax[0];
-    assert(rseq_len>0);
-    rseq_rev = malloc(rseq_len);
-    for (i = 0; i < rseq_len; ++i) rseq_rev[i] = rseq[rseq_len - 1 - i];
-    
-    query_rev= malloc(l_query);
-    for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
-    
-    // NEO:
 
-    //init sequence
-    mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, swvals, forward, backward);
-    //SW computation
-    mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
-    //postprocess:
-    mem_chain2aln_filter(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
-    free(swvals);
-    free(forward);
-    free(backward);
-    free(rseq);
-    free(query_rev);
-    free(rseq_rev);
-}
 void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_t *av_firstpass,mem_alnreg_v *av)
 {
     int i, k;
@@ -1547,60 +1508,6 @@ void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     }
     free(srt);
 }
-
-void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
-{
-    if (c->n == 0) return;
-    mem_alnreg_v *av_firstpass = malloc(sizeof(mem_alnreg_v));
-    int i,rid; // aw: actual bandwidth used in extension
-    int64_t l_pac = bns->l_pac, rmax[2];
-    uint8_t *rseq = 0;
-    uint8_t *query_rev= 0;
-    uint8_t *rseq_rev = 0;
-    swval_t * swvals = malloc(sizeof(swval_t)*c->n);
-    swseq_t * forward = malloc(sizeof(swval_t)*c->n);
-    swseq_t * backward = malloc(sizeof(swval_t)*c->n);
-    
-    mem_chain2maxspan(opt, c,  l_query, l_pac, rmax);
-    rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
-    assert(c->rid == rid);
-    
-    uint64_t rseq_len = rmax[1]-rmax[0];
-    assert(rseq_len>0);
-    rseq_rev = malloc(rseq_len);
-    for (i = 0; i < rseq_len; ++i) rseq_rev[i] = rseq[rseq_len - 1 - i];
-    
-    query_rev= malloc(l_query);
-    for (i = 0; i < l_query; ++i) query_rev[i] = query[l_query - 1 - i];
-
-    kv_init(*av_firstpass);
-    kv_resize(mem_alnreg_t,*av_firstpass,c->n);
-    
-    
-    //first pass
-//  mem_chain2aln_extent(opt, bns, pac, l_query, query, c, av_firstpass);
-    {
-        //init sequence
-        mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, swvals, forward, backward);
-        //SW computation [Theoretically Main Computation]
-        mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
-        //postprocess:
-        mem_chain2aln_filter(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
-    }
-    
-    //second pass
-    mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass->a, av);
-    
-    free(av_firstpass->a);
-    free(av_firstpass);
-    free(swvals);
-    free(forward);
-    free(backward);
-    free(rseq);
-    free(query_rev);
-    free(rseq_rev);
-}
-
 
 //this function should be change to batch and be seperatedinto three part, whith the mem_chain2aln needed to be changed into SIMD
 mem_chain_v mem_gen_chains(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
@@ -1843,16 +1750,6 @@ mem_alnreg_v mem_aln2regs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     return regs;
 }
 
-mem_alnreg_v mem_align1_core_mod(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, void *buf)
-{
-    mem_chain_v chn =mem_gen_chains(opt, bwt, bns, pac, l_seq, seq, buf);
-    //below function should be run in batch together.
-    mem_alnreg_v regs = mem_chains2aln(opt, bwt, bns, pac, l_seq, seq, chn);
-    free(chn.a);
-    regs = mem_aln2regs(opt, bwt, bns, pac, l_seq, seq, regs);
-    return regs;
-}
-
 
 typedef struct {
     const mem_opt_t *opt;
@@ -1874,33 +1771,6 @@ static void worker_gen_chains(void *data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
     w->chn[i] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
-}
-//NEO: in the future, this part should be modified to run in GPU or CPU&GPU
-static void worker_chains2aln(void *data, int i, int tid)
-{
-    worker_t_mod *w = (worker_t_mod*)data;
-    w->regs[i]  = mem_chains2aln(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i]);
-}
-
-static void worker_chains2aln_mod(void *data, int i, int tid)
-{
-    worker_t_mod *w = (worker_t_mod*)data;
-
-    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
-    
-    mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
-    
-    //SW computation [GPU parallel]
-    mem_chains2aln_sw(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
-    //post SW
-    
-    mem_alnreg_v regs;
-    kv_init(regs);
-    mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
-    //finalize
-    w->regs[i] = regs;
-    
-    mem_chains2aln_finalize( w->chn[i], ext_val);
 }
 
 static void worker_chains2aln_init(void*data, int i, int tid)
@@ -1994,8 +1864,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     //kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_mod, &w, n); // find mapping positions
     if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
-    //kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mod, &w, n);
-    
+
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_init, &w, n);
     
     //FUTURE GPU CODE
