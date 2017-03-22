@@ -1784,10 +1784,24 @@ void mem_chains2aln_postextent(const mem_opt_t *opt, const bwt_t *bwt, const bnt
         mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
     }
 }
+
+void mem_chains2aln_sw(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn, qext_t* ext_val)
+{
+    swval_t* g_swvals = ext_val->g_swvals;
+    size_t *index = ext_val->index;
+    int l_query=ext_val->l_query;
+    const uint8_t *query = ext_val->query;
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swval_t * swvals = &g_swvals[index[i]];
+        mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
+    }
+}
+
 mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn)
 {
     //initialize
-    int i;
     mem_alnreg_v regs;
     kv_init(regs);
     
@@ -1795,18 +1809,8 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     
     mem_chains2aln_init(opt, bwt, bns, pac, l_seq, seq,chn, ext_val);
     
-    swval_t* g_swvals = ext_val->g_swvals;
-    size_t *index = ext_val->index;
-    int l_query=ext_val->l_query;
-    const uint8_t *query = ext_val->query;
-    
     //SW computation [GPU parallel]
-    for (i = 0; i < chn.n; ++i) {
-        const mem_chain_t *c = &chn.a[i];
-        if (c->n == 0) continue;
-        swval_t * swvals = &g_swvals[index[i]];
-        mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
-    }
+    mem_chains2aln_sw(opt, bwt, bns, pac, l_seq, seq, chn, ext_val);
     //post SW
     mem_chains2aln_postextent(opt, bwt, bns, pac, l_seq, seq, chn, ext_val , &regs );
     
@@ -1858,6 +1862,9 @@ typedef struct {
     bseq1_t *seqs;
     mem_alnreg_v *regs;
     mem_chain_v *chn;
+    
+    qext_t* ext_val;
+    
     int64_t n_processed;
 } worker_t_mod;
 //NEO: this function need to be change to batch awared mode.
@@ -1869,11 +1876,70 @@ static void worker_gen_chains(void *data, int i, int tid)
 //NEO: in the future, this part should be modified to run in GPU or CPU&GPU
 static void worker_chains2aln(void *data, int i, int tid)
 {
-    if (bwa_verbose >= 4) printf("=====> start chain process <=====\n");
     worker_t_mod *w = (worker_t_mod*)data;
     w->regs[i]  = mem_chains2aln(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i]);
-    
 }
+
+static void worker_chains2aln_mod(void *data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+
+    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    
+    mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+    
+    //SW computation [GPU parallel]
+    mem_chains2aln_sw(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+    //post SW
+    
+    mem_alnreg_v regs;
+    kv_init(regs);
+    mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
+    //finalize
+    w->regs[i] = regs;
+    
+    mem_chains2aln_finalize( w->chn[i], ext_val);
+}
+
+static void worker_chains2aln_init(void*data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    
+    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    
+    mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+}
+//GPU
+static void worker_chains2aln_sw(void*data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    //SW computation [GPU parallel]
+    mem_chains2aln_sw(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+}
+
+static void worker_chains2aln_postsw(void*data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    
+    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    mem_alnreg_v regs;
+    
+    kv_init(regs);
+    mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
+    //finalize
+    w->regs[i] = regs;
+}
+
+static void worker_chains2aln_finalize(void*data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    
+    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    
+    mem_chains2aln_finalize( w->chn[i], ext_val);
+}
+
 static void worker_aln2regs(void *data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
@@ -1910,10 +1976,13 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	global_bns = bns;
 	w.regs = malloc(n * sizeof(mem_alnreg_v));
     w.chn = malloc(n * sizeof(mem_chain_v));
+    w.ext_val=malloc(n*sizeof(qext_t));
+    
 	w.opt = opt; w.bwt = bwt; w.bns = bns; w.pac = pac;
 	w.seqs = seqs; w.n_processed = n_processed;
 	w.pes = &pes[0];
 	w.aux = malloc(opt->n_threads * sizeof(smem_aux_t));
+    
 	for (i = 0; i < opt->n_threads; ++i)
 		w.aux[i] = smem_aux_init();
     /*
@@ -1923,7 +1992,17 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     //kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_mod, &w, n); // find mapping positions
     if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln, &w, n);
+    //kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mod, &w, n);
+    
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_init, &w, n);
+    
+    //FUTURE GPU CODE
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_sw, &w, n);
+    
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_postsw, &w, n);
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_finalize, &w, n);
+    
+    free(w.ext_val);
 #ifdef DEBUG
     printcount();
     reset();
