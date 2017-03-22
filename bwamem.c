@@ -1267,18 +1267,20 @@ typedef struct
     int rlen;
     const uint8_t *ref;
 }swseq_t;
+typedef struct
+{
+    int score;
+    int max_off;
+    
+    int qle,tle;
+    int gtle, gscore;
+}swrst_t;
 
 typedef struct{
     swseq_t *forward;
     swseq_t *backward;//128
     
-    int score[2];
-    
-    int max_off[2];//128
-    
-    int qle[2], tle[2];//128
-    int gtle[2], gscore[2];//128
-    
+    swrst_t sw[2];
     
 }swval_t;
 void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const uint8_t *query_rev, int64_t rmax[2], const uint8_t *rseq, const uint8_t *rseq_rev, const mem_chain_t *c, swval_t * swvals, swseq_t * forward, swseq_t * backward)
@@ -1309,11 +1311,11 @@ void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const ui
             swf->rlen = tmp;
             swf->ref = rs;
             
-            swv->score[0] =s->len * opt->a;
+            swv->sw[0].score =s->len * opt->a;
         }
         
         if (s->qbeg + s->len != l_query) { // right extension
-            int qe, re, sc0 = swv->score[0];
+            int qe, re, sc0 = swv->sw[0].score;
             qe = s->qbeg + s->len;
             re = s->rbeg + s->len - rmax[0];
             assert(re >= 0);
@@ -1322,7 +1324,7 @@ void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const ui
             swb->query = query + qe;
             swb->rlen = rmax[1] - rmax[0] - re;
             swb->ref = rseq + re;
-            swv->score[1] = sc0;
+            swv->sw[1].score = sc0;
         }
     }
 }
@@ -1340,14 +1342,14 @@ void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uin
         if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
         if(swv->forward->qlen!=0)
         {
-            swv->score[0] = ksw_extend2_mod(swv->forward->qlen, swv->forward->query, swv->forward->rlen,swv->forward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->score[0], &swv->qle[0], &swv->tle[0], &swv->gtle[0], &swv->gscore[0], &swv->max_off[0]);
+            swv->sw[0].score = ksw_extend2_mod(swv->forward->qlen, swv->forward->query, swv->forward->rlen,swv->forward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->sw[0].score, &swv->sw[0].qle, &swv->sw[0].tle, &swv->sw[0].gtle, &swv->sw[0].gscore, &swv->sw[0].max_off);
         }
         else{
-            swv->score[0] =  s->len * opt->a;
+            swv->sw[0].score =  s->len * opt->a;
         }
         if(swv->backward->qlen!=0)
         {
-            swv->score[1] = ksw_extend2_mod(swv->backward->qlen, swv->backward->query, swv->backward->rlen, swv->backward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->score[0], &swv->qle[1], &swv->tle[1], &swv->gtle[1], &swv->gscore[1], &swv->max_off[1]);
+            swv->sw[1].score = ksw_extend2_mod(swv->backward->qlen, swv->backward->query, swv->backward->rlen, swv->backward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->sw[0].score, &swv->sw[1].qle, &swv->sw[1].tle, &swv->sw[1].gtle, &swv->sw[1].gscore, &swv->sw[1].max_off);
         }
     }
 }
@@ -1372,11 +1374,11 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
         {
             int qle, tle, gtle, gscore;
             
-            a->score = swv->score[0];
-            qle = swv->qle[0];
-            tle = swv->tle[0];
-            gtle = swv->gtle[0];
-            gscore = swv->gscore[0];
+            a->score = swv->sw[0].score;
+            qle = swv->sw[0].qle;
+            tle = swv->sw[0].tle;
+            gtle = swv->sw[0].gtle;
+            gscore = swv->sw[0].gscore;
           //  max_off[0]=swv->max_off[0];
             
             // check whether we prefer to reach the end of the query
@@ -1398,14 +1400,14 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
         }
         if(swv->backward->qlen!=0)
         {
-            int qle, tle, qe, re, gtle, gscore, sc0 = swv->score[0];
+            int qle, tle, qe, re, gtle, gscore, sc0 = swv->sw[0].score;
             qe = s->qbeg + s->len;
             re = s->rbeg + s->len - rmax[0];
-            a->score = swv->score[1];
-            qle = swv->qle[1];
-            tle = swv->tle[1];
-            gtle = swv->gtle[1];
-            gscore = swv->gscore[1];
+            a->score = swv->sw[1].score;
+            qle = swv->sw[1].qle;
+            tle = swv->sw[1].tle;
+            gtle = swv->sw[1].gtle;
+            gscore = swv->sw[1].gscore;
           //  max_off[1]=swv->max_off[1];
             // similar to the above
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
