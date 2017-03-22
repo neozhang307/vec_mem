@@ -1352,7 +1352,7 @@ void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uin
     }
 }
 
-void mem_chain2aln_postextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], swval_t * swvals, mem_alnreg_t *av_firstpass)
+void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], swval_t * swvals, mem_alnreg_t *av_firstpass)
 {
     int i, k, aw[2]; // aw: actual bandwidth used in extension
     const mem_seed_t *s;
@@ -1463,7 +1463,7 @@ void mem_chain2aln_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     //SW computation
     mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
     //postprocess:
-    mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
+    mem_chain2aln_filter(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
     free(swvals);
     free(forward);
     free(backward);
@@ -1583,7 +1583,7 @@ void mem_chain2aln_mod(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t 
         //SW computation [Theoretically Main Computation]
         mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
         //postprocess:
-        mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
+        mem_chain2aln_filter(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass->a);
     }
     
     //second pass
@@ -1618,7 +1618,7 @@ mem_chain_v mem_gen_chains(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_
 //sw related to a query
 typedef struct
 {
-    uint32_t l_query;//64
+    uint32_t l_query;//32
     size_t chn_count;//64
     //@para chn_count: a query's chain count;
     //@para max_id: a query's valid seed count;
@@ -1639,7 +1639,8 @@ typedef struct
     
     size_t* index;
 }qext_t;
-void mem_chain2aln_init(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn, qext_t* ext_val)
+
+void mem_chains2aln_init(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn, qext_t* ext_val)
 {
     int i;
     mem_alnreg_v regs;
@@ -1732,6 +1733,7 @@ void mem_chain2aln_init(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *
         mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, swvals, forward, backward);
     }
 }
+
 void mem_chains2aln_finalize(mem_chain_v chn,qext_t* ext_val)
 {
     swval_t* g_swvals = ext_val->g_swvals;
@@ -1773,7 +1775,7 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     
     qext_t* ext_val = malloc(sizeof(qext_t));
     
-    mem_chain2aln_init(opt, bwt, bns, pac, l_seq, seq,chn, ext_val);
+    mem_chains2aln_init(opt, bwt, bns, pac, l_seq, seq,chn, ext_val);
     
     swval_t* g_swvals = ext_val->g_swvals;
     size_t *index = ext_val->index;
@@ -1781,7 +1783,6 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     const uint8_t *query = ext_val->query;
     int64_t * rmaxs = ext_val->g_maxs;
     mem_alnreg_t *g_av_firstpass = ext_val->g_av_firstpass;
-
     
     //SW computation [GPU parallel]
     for (i = 0; i < chn.n; ++i) {
@@ -1795,19 +1796,14 @@ mem_alnreg_v mem_chains2aln(const mem_opt_t *opt, const bwt_t *bwt, const bntseq
     //post SW
     for (i=0; i<chn.n; ++i) {
         const mem_chain_t *c = &chn.a[i];
-        
         if (c->n == 0) continue;
-        int64_t rmax[2];
-        rmax[0]=rmaxs[2*i];
-        rmax[1]=rmaxs[2*i+1];
         swval_t * swvals = &g_swvals[index[i]];
         mem_alnreg_t *av_firstpass =&g_av_firstpass[index[i]];
-        mem_chain2aln_postextent(opt, bns, pac, l_query, query, c, rmax, swvals, av_firstpass);
+        mem_chain2aln_filter(opt, bns, pac, l_query, query, c, &rmaxs[2*i], swvals, av_firstpass);
     }
     //second pass, save to av (serial)
     for (i = 0; i < chn.n; ++i) {
         const mem_chain_t *c = &chn.a[i];
-        
         if (c->n == 0) continue;
         
         mem_alnreg_t *av_firstpass =&g_av_firstpass[index[i]];
