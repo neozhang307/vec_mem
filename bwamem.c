@@ -1274,30 +1274,28 @@ typedef struct
     
     int qle,tle;
     int gtle, gscore;
+    
+    swseq_t* sw_seq;
 }swrst_t;
 
-typedef struct{
-    swseq_t *forward;
-    swseq_t *backward;//128
-    
-    swrst_t sw[2];
-    
-}swval_t;
-void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const uint8_t *query_rev, int64_t rmax[2], const uint8_t *rseq, const uint8_t *rseq_rev, const mem_chain_t *c, swval_t * swvals, swseq_t * forward, swseq_t * backward)
+void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const uint8_t *query_rev, int64_t rmax[2], const uint8_t *rseq, const uint8_t *rseq_rev, const mem_chain_t *c,  swseq_t * forward, swseq_t * backward, swrst_t* swfwd_, swrst_t* swbwd_)
 {
-    int k; // aw: actual bandwidth used in extension
+    int k;
     int64_t  tmp;
     const mem_seed_t *s;
     
     for (k = c->n - 1; k >= 0; --k) {
         s = &c->seeds[k];
-        swval_t *swv = &swvals[k];
+        swrst_t *swfwd = &swfwd_[k];
+        swrst_t *swbwd = &swbwd_[k];
         swseq_t *swf = &forward[k];
         swseq_t *swb = &backward[k];
         memset(swf, 0, sizeof(swseq_t));
         memset(swb, 0, sizeof(swseq_t));
-        swv->forward = swf;
-        swv->backward = swb;
+
+        swfwd->sw_seq = swf;
+        swbwd->sw_seq = swb;
+        
         if (s->qbeg) { // left extension
             const uint8_t  *qs;
             const uint8_t *rs;
@@ -1311,11 +1309,11 @@ void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const ui
             swf->rlen = tmp;
             swf->ref = rs;
             
-            swv->sw[0].score =s->len * opt->a;
+            swfwd->score =s->len * opt->a;
         }
         
         if (s->qbeg + s->len != l_query) { // right extension
-            int qe, re, sc0 = swv->sw[0].score;
+            int qe, re, sc0 = swfwd->score;
             qe = s->qbeg + s->len;
             re = s->rbeg + s->len - rmax[0];
             assert(re >= 0);
@@ -1324,12 +1322,12 @@ void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const ui
             swb->query = query + qe;
             swb->rlen = rmax[1] - rmax[0] - re;
             swb->ref = rseq + re;
-            swv->sw[1].score = sc0;
+            swbwd->score = sc0;
         }
     }
 }
 
-void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, swval_t * swvals)
+void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, swrst_t* swfwd_, swrst_t* swbwd_)
 {
     int k; // aw: actual bandwidth used in extension
     
@@ -1338,23 +1336,26 @@ void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uin
     //SW computation
     for (k = c->n - 1; k >= 0; --k) {
         s = &c->seeds[k];
-        swval_t *swv = &swvals[k];
+        swrst_t *swfwd = &swfwd_[k];
+        swrst_t *swbwd = &swbwd_[k];
+        swseq_t *fwd = swfwd->sw_seq;
+        swseq_t *bwd = swbwd->sw_seq;
         if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
-        if(swv->forward->qlen!=0)
+        if(fwd->qlen!=0)
         {
-            swv->sw[0].score = ksw_extend2_mod(swv->forward->qlen, swv->forward->query, swv->forward->rlen,swv->forward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->sw[0].score, &swv->sw[0].qle, &swv->sw[0].tle, &swv->sw[0].gtle, &swv->sw[0].gscore, &swv->sw[0].max_off);
+            swfwd->score = ksw_extend2_mod(fwd->qlen, fwd->query, fwd->rlen,fwd->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swfwd->score, &swfwd->qle, &swfwd->tle, &swfwd->gtle, &swfwd->gscore, &swfwd->max_off);
         }
         else{
-            swv->sw[0].score =  s->len * opt->a;
+            swfwd->score =  s->len * opt->a;
         }
-        if(swv->backward->qlen!=0)
+        if(bwd->qlen!=0)
         {
-            swv->sw[1].score = ksw_extend2_mod(swv->backward->qlen, swv->backward->query, swv->backward->rlen, swv->backward->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swv->sw[0].score, &swv->sw[1].qle, &swv->sw[1].tle, &swv->sw[1].gtle, &swv->sw[1].gscore, &swv->sw[1].max_off);
+            swbwd->score = ksw_extend2_mod(bwd->qlen, bwd->query, bwd->rlen, bwd->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swfwd->score, &swbwd->qle, &swbwd->tle, &swbwd->gtle, &swbwd->gscore, &swbwd->max_off);
         }
     }
 }
 
-void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], swval_t * swvals, mem_alnreg_t *av_firstpass)
+void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], mem_alnreg_t *av_firstpass, swrst_t* swfwd_, swrst_t* swbwd_)
 {
     int i, k, aw[2]; // aw: actual bandwidth used in extension
     const mem_seed_t *s;
@@ -1362,24 +1363,26 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     
     for (k = c->n - 1; k >= 0; --k) {
         s = &c->seeds[k];
-        swval_t *swv = &swvals[k];
+        
         mem_alnreg_t *a;
         a = &av_firstpass[k];
         memset(a, 0, sizeof(mem_alnreg_t));
         a->w = aw[0] = aw[1] = opt->w;
         a->score = a->truesc = -1;
         a->rid = c->rid;
-        
-        if(swv->forward->qlen!=0)
+        swrst_t *swfwd = &swfwd_[k];
+        swrst_t *swbwd = &swbwd_[k];
+        swseq_t *fwd = swfwd->sw_seq;
+        swseq_t * bwd = swbwd->sw_seq;
+        if(fwd->qlen!=0)
         {
             int qle, tle, gtle, gscore;
             
-            a->score = swv->sw[0].score;
-            qle = swv->sw[0].qle;
-            tle = swv->sw[0].tle;
-            gtle = swv->sw[0].gtle;
-            gscore = swv->sw[0].gscore;
-          //  max_off[0]=swv->max_off[0];
+            a->score = swfwd->score;
+            qle = swfwd->qle;
+            tle = swfwd->tle;
+            gtle = swfwd->gtle;
+            gscore = swfwd->gscore;
             
             // check whether we prefer to reach the end of the query
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
@@ -1389,26 +1392,22 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
                 a->qb = 0, a->rb = s->rbeg - gtle;
                 a->truesc = gscore;
             }
-         //   rs =swv->forward->ref;
-         //   qs = swv->forward->query;
-         //   free(qs); free(rs);
         }
         else{
             a->score = a->truesc = s->len * opt->a;
             a->qb = 0;
             a->rb = s->rbeg;
         }
-        if(swv->backward->qlen!=0)
+        if(bwd->qlen!=0)
         {
-            int qle, tle, qe, re, gtle, gscore, sc0 = swv->sw[0].score;
+            int qle, tle, qe, re, gtle, gscore, sc0 = swfwd->score;
             qe = s->qbeg + s->len;
             re = s->rbeg + s->len - rmax[0];
-            a->score = swv->sw[1].score;
-            qle = swv->sw[1].qle;
-            tle = swv->sw[1].tle;
-            gtle = swv->sw[1].gtle;
-            gscore = swv->sw[1].gscore;
-          //  max_off[1]=swv->max_off[1];
+            a->score = swbwd->score;
+            qle = swbwd->qle;
+            tle = swbwd->tle;
+            gtle = swbwd->gtle;
+            gscore = swbwd->gscore;
             // similar to the above
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
                 a->qe = qe + qle, a->re = rmax[0] + re + tle;
@@ -1541,10 +1540,12 @@ typedef struct
     uint8_t* query_rev;
     
     mem_alnreg_t* g_av_firstpass;
-    swval_t* g_swvals;
     
     swseq_t* g_forward;
     swseq_t* g_backward;
+    
+    swrst_t* g_swfwd;
+    swrst_t* g_swbwd;
     
     size_t* index;
 }qext_t;
@@ -1611,12 +1612,14 @@ void mem_chains2aln_init(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t 
     ext_val->index=index;
     
     size_t max_id =index[chn.n];
-    swval_t* g_swvals = malloc(sizeof(swval_t)*max_id);
-    swseq_t * g_forward = malloc(sizeof(swval_t)*max_id);
-    swseq_t * g_backward = malloc(sizeof(swval_t)*max_id);
+    swseq_t * g_forward = malloc(sizeof(swseq_t)*max_id);
+    swseq_t * g_backward = malloc(sizeof(swseq_t)*max_id);
+    swrst_t * g_swfwd = malloc(sizeof(swrst_t)*max_id);
+    swrst_t * g_swbwd = malloc(sizeof(swrst_t)*max_id);
     mem_alnreg_t *g_av_firstpass = malloc(sizeof(mem_alnreg_t)*max_id);
-    
-    ext_val->g_swvals=g_swvals;
+
+    ext_val->g_swfwd = g_swfwd;
+    ext_val->g_swbwd = g_swbwd;
     ext_val->g_forward=g_forward;
     ext_val->g_backward=g_backward;
     ext_val->g_av_firstpass=g_av_firstpass;
@@ -1631,21 +1634,22 @@ void mem_chains2aln_init(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t 
         uint8_t *rseq = 0;
         uint8_t *rseq_rev = 0;
         
-        swval_t * swvals = &g_swvals[index[i]];
         swseq_t * forward = &g_forward[index[i]];
         swseq_t * backward = &g_backward[index[i]];
+        swrst_t * swfwd = &g_swfwd[index[i]];
+        swrst_t * swbwd = &g_swbwd[index[i]];
+        
         rmax[0]=rmaxs[2*i];
         rmax[1]=rmaxs[2*i+1];
         
         rseq = rseqs[i];
         rseq_rev = rseq_revs[i];
-        mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, swvals, forward, backward);
+        mem_chain2aln_preextent(opt, bns, pac, l_query, query, query_rev, rmax, rseq, rseq_rev, c, forward, backward, swfwd, swbwd);
     }
 }
 
 void mem_chains2aln_finalize(mem_chain_v chn,qext_t* ext_val)
 {
-    swval_t* g_swvals = ext_val->g_swvals;
     size_t *index = ext_val->index;
 
     int64_t * rmaxs = ext_val->g_maxs;
@@ -1660,7 +1664,8 @@ void mem_chains2aln_finalize(mem_chain_v chn,qext_t* ext_val)
     }
     free(g_forward);
     free(g_backward);
-    free(g_swvals);
+    free(ext_val->g_swfwd);
+    free(ext_val->g_swbwd);
     free(g_av_firstpass);
     free(index);
     for(int i=0; i<chn.n; i++)
@@ -1679,7 +1684,6 @@ void mem_chains2aln_postextent(const mem_opt_t *opt, const bwt_t *bwt, const bnt
 {
     int l_query=ext_val->l_query;
     const uint8_t *query = ext_val->query;
-    swval_t* g_swvals = ext_val->g_swvals;
     mem_alnreg_t *g_av_firstpass = ext_val->g_av_firstpass;
     size_t *index = ext_val->index;
     int64_t * rmaxs = ext_val->g_maxs;
@@ -1687,24 +1691,25 @@ void mem_chains2aln_postextent(const mem_opt_t *opt, const bwt_t *bwt, const bnt
     for (int i=0; i<chn.n; ++i) {
         const mem_chain_t *c = &chn.a[i];
         if (c->n == 0) continue;
-        swval_t * swvals = &g_swvals[index[i]];
         mem_alnreg_t *av_firstpass =&g_av_firstpass[index[i]];
-        mem_chain2aln_filter(opt, bns, pac, l_query, query, c, &rmaxs[2*i], swvals, av_firstpass);
+        swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
+        swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
+        mem_chain2aln_filter(opt, bns, pac, l_query, query, c, &rmaxs[2*i], av_firstpass, swfwd, swbwd);
         mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
     }
 }
 
 void mem_chains2aln_sw(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn, qext_t* ext_val)
 {
-    swval_t* g_swvals = ext_val->g_swvals;
     size_t *index = ext_val->index;
     int l_query=ext_val->l_query;
     const uint8_t *query = ext_val->query;
     for (int i = 0; i < chn.n; ++i) {
         const mem_chain_t *c = &chn.a[i];
         if (c->n == 0) continue;
-        swval_t * swvals = &g_swvals[index[i]];
-        mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swvals);
+        swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
+        swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
+        mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swfwd, swbwd);
     }
 }
 
@@ -1777,7 +1782,7 @@ static void worker_chains2aln_init(void*data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
     
-    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    qext_t* ext_val = &w->ext_val[i];
     
     mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
 }
@@ -1785,7 +1790,7 @@ static void worker_chains2aln_init(void*data, int i, int tid)
 static void worker_chains2aln_sw(void*data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
-    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    qext_t* ext_val = &w->ext_val[i];
     //SW computation [GPU parallel]
     mem_chains2aln_sw(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
 }
@@ -1794,7 +1799,7 @@ static void worker_chains2aln_postsw(void*data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
     
-    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    qext_t* ext_val = &w->ext_val[i];
     mem_alnreg_v regs;
     
     kv_init(regs);
@@ -1807,7 +1812,7 @@ static void worker_chains2aln_finalize(void*data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
     
-    qext_t* ext_val = &w->ext_val[i];//= malloc(sizeof(qext_t));
+    qext_t* ext_val = &w->ext_val[i];
     
     mem_chains2aln_finalize( w->chn[i], ext_val);
 }
@@ -1860,8 +1865,6 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     /*
      NEO: this statement need to change to batch mode
      */
-	//kt_for(opt->n_threads, worker1, &w, (opt->flag&MEM_F_PE)? n>>1 : n); // find mapping positions
-    //kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_mod, &w, n); // find mapping positions
     if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
 
