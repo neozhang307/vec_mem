@@ -1275,6 +1275,7 @@ typedef struct
     int qle,tle;
     int gtle, gscore;
     
+    int h0;
     swseq_t* sw_seq;
 }swrst_t;
 
@@ -1309,11 +1310,12 @@ void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const ui
             swf->rlen = tmp;
             swf->ref = rs;
             
-            swfwd->score =s->len * opt->a;
+//            swfwd->score =s->len * opt->a;
+            swfwd->h0 =s->len * opt->a;
         }
         
         if (s->qbeg + s->len != l_query) { // right extension
-            int qe, re, sc0 = swfwd->score;
+            int qe, re;// sc0 = swfwd->score;
             qe = s->qbeg + s->len;
             re = s->rbeg + s->len - rmax[0];
             assert(re >= 0);
@@ -1322,37 +1324,44 @@ void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const ui
             swb->query = query + qe;
             swb->rlen = rmax[1] - rmax[0] - re;
             swb->ref = rseq + re;
-            swbwd->score = sc0;
+            //swbwd->score = sc0;
         }
     }
 }
 
-void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, swrst_t* swfwd_, swrst_t* swbwd_)
+void mem_chain_extent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, swrst_t* sws)
 {
-    int k; // aw: actual bandwidth used in extension
-    
     const mem_seed_t *s;
-
-    //SW computation
-    for (k = c->n - 1; k >= 0; --k) {
+    
+    for (int k = 0; k < c->n; ++k) {
         s = &c->seeds[k];
-        swrst_t *swfwd = &swfwd_[k];
-        swrst_t *swbwd = &swbwd_[k];
-        swseq_t *fwd = swfwd->sw_seq;
-        swseq_t *bwd = swbwd->sw_seq;
-        if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
-        if(fwd->qlen!=0)
+        swrst_t *sw = &sws[k];
+        swseq_t *seq = sw->sw_seq;
+        if(seq->qlen!=0)
         {
-            swfwd->score = ksw_extend2_mod(fwd->qlen, fwd->query, fwd->rlen,fwd->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swfwd->score, &swfwd->qle, &swfwd->tle, &swfwd->gtle, &swfwd->gscore, &swfwd->max_off);
+            sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
         }
         else{
-            swfwd->score =  s->len * opt->a;
-        }
-        if(bwd->qlen!=0)
-        {
-            swbwd->score = ksw_extend2_mod(bwd->qlen, bwd->query, bwd->rlen, bwd->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, swfwd->score, &swbwd->qle, &swbwd->tle, &swbwd->gtle, &swbwd->gscore, &swbwd->max_off);
+            sw->score =  s->len * opt->a;
         }
     }
+}
+
+
+void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, swrst_t* swfwd_, swrst_t* swbwd_)
+{
+    int k;
+    
+    //left extend
+    mem_chain_extent(opt, bns, pac, l_query,query, c, swfwd_);
+    //init left extend
+    for (k = 0; k < c->n; ++k) {
+        int pre_score= swfwd_[k].score;
+        swrst_t *swbwd = &swbwd_[k];
+        swbwd->h0=pre_score;
+    }
+    //right extend
+    mem_chain_extent(opt, bns, pac, l_query,query, c, swbwd_);
 }
 
 void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], mem_alnreg_t *av_firstpass, swrst_t* swfwd_, swrst_t* swbwd_)
