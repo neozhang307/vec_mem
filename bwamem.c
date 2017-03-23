@@ -2059,12 +2059,47 @@ static void worker_mod(void *data, int i, int tid)
     
 }
 
-static void worker_chains2aln_batch(void *data, int start, int end, int batch, int tid)
+static swrst_t* fwd(qext_t* ext_val,size_t id)
+{
+    return &ext_val->g_swfwd[id];
+}
+
+static swrst_t* bwd(qext_t* ext_val,size_t id)
+{
+    return &ext_val->g_swbwd[id];
+}
+//convert to SIMD
+void mem_chain_extent_batch(void *data, int start, int end, int batch, int tid, swrst_t*(*func)(qext_t*,size_t))
 {
     worker_t_mod *w = (worker_t_mod*)data;
     const mem_opt_t *opt = w->opt;
     const bntseq_t *bns = w->bns;
     const uint8_t *pac = w->pac;
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
+        
+        
+        mem_chain_v chn =  w->chn[i];
+        size_t *index = ext_val->index;
+        int l_query=ext_val->l_query;
+        const uint8_t *query = ext_val->query;
+        
+        //left extend
+        for (int i = 0; i < chn.n; ++i) {
+            const mem_chain_t *c = &chn.a[i];
+            if (c->n == 0) continue;
+            swrst_t * swfwd =func(ext_val,index[i]);// &ext_val->g_swfwd[index[i]];
+            
+            //left extend
+            mem_chain_extent(opt, bns, pac, l_query,query, c, swfwd);
+        }
+    }
+}
+
+static void worker_chains2aln_batch(void *data, int start, int end, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
     
     for(int i=start,j=0; i<end&&j<batch; ++j,++i)
     {
@@ -2073,26 +2108,15 @@ static void worker_chains2aln_batch(void *data, int start, int end, int batch, i
         mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
     
     }
+    mem_chain_extent_batch(data, start, end, batch, tid, fwd);
+
     for(int i=start,j=0; i<end&&j<batch; ++j,++i)
     {
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
-    //SW computation [GPU parallel]
-
         mem_chain_v chn =  w->chn[i];
         size_t *index = ext_val->index;
-        int l_query=ext_val->l_query;
-        const uint8_t *query = ext_val->query;
-            
-        //left extend
-        for (int i = 0; i < chn.n; ++i) {
-            const mem_chain_t *c = &chn.a[i];
-            if (c->n == 0) continue;
-            swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
-                
-                //left extend
-            mem_chain_extent(opt, bns, pac, l_query,query, c, swfwd);
-        }
+    
         for (int i = 0; i < chn.n; ++i) {
             const mem_chain_t *c = &chn.a[i];
             if (c->n == 0) continue;
@@ -2105,16 +2129,8 @@ static void worker_chains2aln_batch(void *data, int start, int end, int batch, i
                 swbwd_->h0=pre_score;
             }
         }
-        //right extent
-        for (int i = 0; i < chn.n; ++i) {
-            const mem_chain_t *c = &chn.a[i];
-            if (c->n == 0) continue;
-            swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
-            //right extend
-            mem_chain_extent(opt, bns, pac, l_query,query, c, swbwd);
-            
-        }
     }
+    mem_chain_extent_batch(data, start, end, batch, tid, bwd);
     
     
     for(int i=start,j=0; i<end&&j<batch; ++j,++i)
