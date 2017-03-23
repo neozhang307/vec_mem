@@ -1821,6 +1821,16 @@ static void worker_chains2aln_init(void*data, int i, int tid)
     
     mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
 }
+static void worker_chains2aln_init_batch(void *data, int start, int end, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[i];
+    
+        mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+    }
+}
 //GPU
 static void worker_chains2aln_sw(void*data, int i, int tid)
 {
@@ -1854,6 +1864,35 @@ static void worker_chains2aln_mainsw(void * data, int i, int tid)
     }
 }
 
+static void worker_chains2aln_mainsw_batch(void *data, int start, int end, int batch, int tid)
+{
+    
+    worker_t_mod *w = (worker_t_mod*)data;
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[i];
+        
+        mem_chain_v chn = w->chn[i];
+        const mem_opt_t *opt = w->opt;
+        const bntseq_t *bns = w->bns;
+    
+    
+        size_t *index = ext_val->index;
+        int l_query=ext_val->l_query;
+        const uint8_t *query = ext_val->query;
+        const uint8_t *pac = w->pac;
+        for (int i = 0; i < chn.n; ++i) {
+            const mem_chain_t *c = &chn.a[i];
+            if (c->n == 0) continue;
+            swrst_t * sw_nxt = &ext_val->nxt_ext[index[i]];
+        
+            //left extend
+            mem_chain_extent(opt, bns, pac, l_query,query, c, sw_nxt);
+        }
+    }
+}
+
+
 static void worker_chains2aln_preparerext(void * data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
@@ -1876,6 +1915,32 @@ static void worker_chains2aln_preparerext(void * data, int i, int tid)
         }
     }
     ext_val->nxt_ext = ext_val->g_swbwd;
+}
+static void worker_chains2aln_preparerext_batch(void *data, int start, int end, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[i];
+    
+        mem_chain_v chn = w->chn[i];
+    
+        size_t *index = ext_val->index;
+        
+        for (int i = 0; i < chn.n; ++i) {
+            const mem_chain_t *c = &chn.a[i];
+            if (c->n == 0) continue;
+            swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
+            swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
+        //init left extend
+            for (int k = 0; k < c->n; ++k) {
+                int pre_score= swfwd[k].score;
+                swrst_t *swbwd_ = &swbwd[k];
+                swbwd_->h0=pre_score;
+            }
+        }
+        ext_val->nxt_ext = ext_val->g_swbwd;
+    }
 }
 
 static void worker_chains2aln_sw2(void*data, int i, int tid)
@@ -1938,6 +2003,22 @@ static void worker_chains2aln_postsw(void*data, int i, int tid)
     w->regs[i] = regs;
 }
 
+static void worker_chains2aln_postsw_batch(void *data, int start, int end, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[i];
+        mem_alnreg_v regs;
+    
+        kv_init(regs);
+        mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
+        //finalize
+        w->regs[i] = regs;
+    }
+}
+
+
 static void worker_chains2aln_finalize(void*data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
@@ -1947,6 +2028,16 @@ static void worker_chains2aln_finalize(void*data, int i, int tid)
     mem_chains2aln_finalize( w->chn[i], ext_val);
 }
 
+static void worker_chains2aln_finalize_batch(void *data, int start, int end, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[i];
+    
+        mem_chains2aln_finalize( w->chn[i], ext_val);
+    }
+}
 static void worker_aln2regs(void *data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
@@ -1974,6 +2065,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 {
 	extern void kt_for(int n_threads, void (*func)(void*,int,int), void *data, int n);
     extern void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,int,int), void *data, int n);
+    extern void kt_for_batch2(int n_threads, int batch_size, void (*func)(void*,int,int,int,int), void *data, long n);
 	worker_t_mod w;
 	mem_pestat_t pes[4];
 	double ctime, rtime;
@@ -1998,16 +2090,19 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
 
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_init, &w, n);
+    fprintf(stderr,"=====> Processing %d batchs of read <=====\n", n);
+    kt_for_batch2(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_init_batch, &w, n);
     
     //FUTURE GPU CODE
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mainsw, &w, n);
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_preparerext, &w, n);
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mainsw, &w, n);
+    kt_for_batch2(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mainsw_batch, &w, n);
+    kt_for_batch2(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_preparerext_batch, &w, n);
+    kt_for_batch2(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mainsw_batch, &w, n);
     
     
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_postsw, &w, n);
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_finalize, &w, n);
+    //kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_postsw, &w, n);
+    kt_for_batch2(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_postsw_batch, &w, n);
+    
+    kt_for_batch2(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_finalize_batch, &w, n);
     
     free(w.ext_val);
 #ifdef DEBUG
@@ -2019,7 +2114,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
         free(w.chn[i].a);
     }
     
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_aln2regs, &w, n);
+    kt_for_batch(opt->n_threads, 10*(opt->flag&MEM_F_PE)?2:1, worker_aln2regs, &w, n);
     
     
     for (i = 0; i < opt->n_threads; ++i)
