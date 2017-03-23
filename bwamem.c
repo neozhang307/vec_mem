@@ -1237,7 +1237,7 @@ void mem_chain2maxspan(const mem_opt_t *opt, const mem_chain_t *c, int l_query, 
     // get the max possible span
     // NEO: should set on CPU
     // NEO: can we orgnize query by max possible span?
-    //NEO: potentially OOM, in every 10MB batch, average 67MB
+    // NEO: potentially OOM, in every 10MB batch, average 67MB
     int i;
     int64_t max=0;
     rmax[0] = l_pac<<1; rmax[1] = 0;
@@ -1557,6 +1557,7 @@ typedef struct
     swrst_t* g_swbwd;
     
     size_t* index;
+    swrst_t* nxt_ext;
 }qext_t;
 
 void mem_chains2aln_init(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, int l_seq, char *seq, mem_chain_v chn, qext_t* ext_val)
@@ -1628,6 +1629,7 @@ void mem_chains2aln_init(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t 
     mem_alnreg_t *g_av_firstpass = malloc(sizeof(mem_alnreg_t)*max_id);
 
     ext_val->g_swfwd = g_swfwd;
+    ext_val->nxt_ext = g_swfwd;
     ext_val->g_swbwd = g_swbwd;
     ext_val->g_forward=g_forward;
     ext_val->g_backward=g_backward;
@@ -1713,12 +1715,36 @@ void mem_chains2aln_sw(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *b
     size_t *index = ext_val->index;
     int l_query=ext_val->l_query;
     const uint8_t *query = ext_val->query;
+    
+    //left extend
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
+        
+        //left extend
+        mem_chain_extent(opt, bns, pac, l_query,query, c, swfwd);
+    }
     for (int i = 0; i < chn.n; ++i) {
         const mem_chain_t *c = &chn.a[i];
         if (c->n == 0) continue;
         swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
         swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
-        mem_chain2aln_swextent(opt, bns, pac, l_query, query, c, swfwd, swbwd);
+        //init left extend
+        for (int k = 0; k < c->n; ++k) {
+            int pre_score= swfwd[k].score;
+            swrst_t *swbwd_ = &swbwd[k];
+            swbwd_->h0=pre_score;
+        }
+    }
+    //right extent
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
+        //right extend
+        mem_chain_extent(opt, bns, pac, l_query,query, c, swbwd);
+
     }
 }
 
@@ -1804,6 +1830,101 @@ static void worker_chains2aln_sw(void*data, int i, int tid)
     mem_chains2aln_sw(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
 }
 
+static void worker_chains2aln_mainsw(void * data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    qext_t* ext_val = &w->ext_val[i];
+    
+    mem_chain_v chn = w->chn[i];
+    const mem_opt_t *opt = w->opt;
+    const bntseq_t *bns = w->bns;
+    
+    
+    size_t *index = ext_val->index;
+    int l_query=ext_val->l_query;
+    const uint8_t *query = ext_val->query;
+    const uint8_t *pac = w->pac;
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swrst_t * sw_nxt = &ext_val->nxt_ext[index[i]];
+        
+        //left extend
+        mem_chain_extent(opt, bns, pac, l_query,query, c, sw_nxt);
+    }
+}
+
+static void worker_chains2aln_preparerext(void * data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    qext_t* ext_val = &w->ext_val[i];
+    
+    mem_chain_v chn = w->chn[i];
+    
+    size_t *index = ext_val->index;
+
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
+        swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
+        //init left extend
+        for (int k = 0; k < c->n; ++k) {
+            int pre_score= swfwd[k].score;
+            swrst_t *swbwd_ = &swbwd[k];
+            swbwd_->h0=pre_score;
+        }
+    }
+    ext_val->nxt_ext = ext_val->g_swbwd;
+}
+
+static void worker_chains2aln_sw2(void*data, int i, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    qext_t* ext_val = &w->ext_val[i];
+    
+    mem_chain_v chn = w->chn[i];
+    const mem_opt_t *opt = w->opt;
+    const bntseq_t *bns = w->bns;
+        
+        
+    size_t *index = ext_val->index;
+    int l_query=ext_val->l_query;
+    const uint8_t *query = ext_val->query;
+    const uint8_t *pac = w->pac;
+        
+        //left extend
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swrst_t * sw_nxt = &ext_val->nxt_ext[index[i]];
+            
+        //left extend
+        mem_chain_extent(opt, bns, pac, l_query,query, c, sw_nxt);
+    }
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
+        swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
+        //init left extend
+        for (int k = 0; k < c->n; ++k) {
+            int pre_score= swfwd[k].score;
+            swrst_t *swbwd_ = &swbwd[k];
+            swbwd_->h0=pre_score;
+        }
+    }
+    ext_val->nxt_ext = ext_val->g_swbwd;
+    //right extent
+    for (int i = 0; i < chn.n; ++i) {
+        const mem_chain_t *c = &chn.a[i];
+        if (c->n == 0) continue;
+        swrst_t * sw_nxt = &ext_val->nxt_ext[index[i]];
+        //right extend
+        mem_chain_extent(opt, bns, pac, l_query,query, c, sw_nxt);
+    }
+}
+
 static void worker_chains2aln_postsw(void*data, int i, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
@@ -1880,7 +2001,10 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_init, &w, n);
     
     //FUTURE GPU CODE
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_sw, &w, n);
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mainsw, &w, n);
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_preparerext, &w, n);
+    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_mainsw, &w, n);
+    
     
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_postsw, &w, n);
     kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_chains2aln_finalize, &w, n);
