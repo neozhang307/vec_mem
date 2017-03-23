@@ -149,6 +149,28 @@ void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,long,int), v
     for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], 0, ktf_worker_batch, &t.w[i]);
     for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 }
+
+void kt_for_batch2(int n_threads, int batch_size, void (*func)(void*,long,long,int,int), void *data, long n)
+{
+    int i;
+    kt_for_t_batch t;
+    pthread_t *tid;
+
+    t.data = data, t.n_threads = n_threads, t.n = n;
+    
+    t.func_batch = func;
+    
+    t.s_batch = batch_size>1?batch_size:1;
+    
+    t.w = (ktf_worker_t_batch*)alloca(n_threads * sizeof(ktf_worker_t_batch));
+    tid = (pthread_t*)alloca(n_threads * sizeof(pthread_t));
+    
+    for (i = 0; i < n_threads; ++i)
+        t.w[i].t = &t, t.w[i].i = i*batch_size;
+    
+    for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], 0, ktf_worker_batch, &t.w[i]);
+    for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
+}
 /*****************
  * kt_pipeline() *
  *****************/
