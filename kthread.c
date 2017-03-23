@@ -80,9 +80,15 @@ typedef struct kt_for_t_batch {
     int s_batch;
     long n;
     ktf_worker_t_batch *w;
-    void (*func)(void*,long,int);
+    void (*func_batch)(void*,long,long,int,int);
     void *data;
 } kt_for_t_batch;
+
+typedef struct batch_pack
+{
+    void (*func)(void*,long,int);
+    void *data;
+}batch_pack;
 
 static inline long steal_work_batch(kt_for_t_batch *t, int step)
 {
@@ -94,6 +100,16 @@ static inline long steal_work_batch(kt_for_t_batch *t, int step)
     return k >= t->n? -1 : k;
 }
 
+void process_batch(void *data, long start, long end, int batch, int tid)
+{
+    long i = start;
+    batch_pack *pck = (batch_pack*)data;
+    for(int j=0; i<end&&j<batch; j++,i++)
+    {
+        pck->func(pck->data, i, tid);//compute it in
+    }
+}
+
 static void *ktf_worker_batch(void *data)
 {
     ktf_worker_t_batch *w = (ktf_worker_t_batch*)data;
@@ -101,19 +117,12 @@ static void *ktf_worker_batch(void *data)
     int step = w->t->n_threads*w->t->s_batch;
     for (;;) {
         i = __sync_fetch_and_add(&w->i, step);
-        
-        //process a batch of values
-        for(int j=0; i<w->t->n&&j<w->t->s_batch; j++,i++)
-        {
-            w->t->func(w->t->data, i, w - w->t->w);//compute it in
-        }
-        if (i >= w->t->n) break;
+        w->t->func_batch(w->t->data,i,w->t->n,w->t->s_batch,w - w->t->w);
+        if(i+step>w->t->n)break;
+
     }
     while ((i = steal_work_batch(w->t,step)) >= 0)
-        for(int j=0; i<w->t->n&&j<w->t->s_batch; j++,i++)
-        {
-            w->t->func(w->t->data, i, w - w->t->w);//compute it in
-        }
+        w->t->func_batch(w->t->data,i,w->t->n,w->t->s_batch,w - w->t->w);
     pthread_exit(0);
 }
 
@@ -121,8 +130,13 @@ void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,long,int), v
 {
     int i;
     kt_for_t_batch t;
+    batch_pack pck;
     pthread_t *tid;
-    t.func = func, t.data = data, t.n_threads = n_threads, t.n = n;
+    pck.func = func;
+    pck.data = data;
+    t.data = &pck, t.n_threads = n_threads, t.n = n;
+    
+    t.func_batch = process_batch;
     
     t.s_batch = batch_size>1?batch_size:1;
     
@@ -135,8 +149,6 @@ void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,long,int), v
     for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], 0, ktf_worker_batch, &t.w[i]);
     for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 }
-
-
 /*****************
  * kt_pipeline() *
  *****************/
