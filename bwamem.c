@@ -1260,24 +1260,25 @@ void mem_chain2maxspan(const mem_opt_t *opt, const mem_chain_t *c, int l_query, 
     add_count(rmax[1]-rmax[0]);
 #endif
 }
-typedef struct
-{
-    int qlen;
-    const uint8_t *query;
-    int rlen;
-    const uint8_t *ref;
-}swseq_t;
-typedef struct
-{
-    int score;
-    int max_off;
-    
-    int qle,tle;
-    int gtle, gscore;
-    
-    int h0;
-    swseq_t* sw_seq;
-}swrst_t;
+#include"ksw_batch_simd.h"
+//typedef struct
+//{
+//    int qlen;
+//    const uint8_t *query;
+//    int rlen;
+//    const uint8_t *ref;
+//}swseq_t;
+//typedef struct
+//{
+//    int score;
+//    int max_off;
+//    
+//    int qle,tle;
+//    int gtle, gscore;
+//    
+//    int h0;
+//    swseq_t* sw_seq;
+//}swrst_t;
 
 void mem_chain2aln_preextent(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const uint8_t *query_rev, int64_t rmax[2], const uint8_t *rseq, const uint8_t *rseq_rev, const mem_chain_t *c,  swseq_t * forward, swseq_t * backward, swrst_t* swfwd_, swrst_t* swbwd_)
 {
@@ -1556,7 +1557,7 @@ typedef struct
     swrst_t* g_swfwd;
     swrst_t* g_swbwd;
     
-    size_t* index;
+    size_t* index;//save ist chain related value in index[i] location of g_forward/g_backward/g_swfwd/g_swbwd
     swrst_t* nxt_ext;
 }qext_t;
 
@@ -2175,25 +2176,54 @@ static void worker_chains2aln_batch(void *data, int start, int batch, int tid)
 }
 
 //future SIMD
-void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*func)(qext_t*,size_t))
+void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*getItem)(qext_t*,size_t))
 {
     //init
-    
+    size_t* batch_id = malloc((batch+1)*sizeof(size_t));
+    batch_id[0]=0;
+    size_t pre_id=0;
+    for(int i=1; i<=batch; i++)
+    {
+        
+        qext_t* ext_val = ext_base+i-1;
+        size_t *ext_index = ext_val->index;
+        size_t ext_size = ext_index[chn_idx[i-1]];// a seed related swrst count
+        size_t cur_id = ext_size + pre_id;
+
+        batch_id[i] = cur_id;
+        pre_id = cur_id;
+    }
+//
+    swrst_t* g_srt = malloc(batch_id[batch]*sizeof(swrst_t));
+    for(int i=0; i<batch; i++)
+    {
+        qext_t* ext_val = ext_base+i;
+        size_t *ext_index = ext_val->index;
+        size_t ext_size = ext_index[chn_idx[i]];
+        
+        size_t ptr = batch_id[i];
+        size_t idff = batch_id[i+1]-batch_id[i];
+        assert(idff == ext_size);
+        
+        swrst_t * sws =getItem(ext_val,0);
+        memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
+    }
     //SW
     
-    //finalize
-    
-    for(int j=0; j<batch; ++j)
+    for(int i=0; i<batch; ++i)
     {
-        qext_t* ext_val = ext_base+j;// &w->ext_val[batch*tid+j];
+        //i: 0-batch
+        //     j: 0 - chn_idx[i]
+        //
+        qext_t* ext_val = ext_base+i;// &w->ext_val[batch*tid+j];
         
-        size_t *index = ext_val->index;
-        size_t max_id = index[chn_idx[j]];
-        swrst_t * sws =func(ext_val,index[0]);
+        size_t *ext_index = ext_val->index;
+        size_t ext_size = ext_index[chn_idx[i]];
         
-        for(int k=0; k<max_id; k++)
+        size_t ptr = batch_id[i];
+        for(int k=0; k<ext_size; k++)
         {
-            swrst_t *sw = &sws[k];
+            swrst_t *sw = g_srt+ptr+k;
             swseq_t *seq = sw->sw_seq;
             if(seq->qlen!=0)
             {
@@ -2201,6 +2231,46 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
             }
         }
     }
+    
+    //finalize
+//    
+//    for(int i=0; i<batch; ++i)
+//    {
+//        //i: 0-batch
+//        //     j: 0 - chn_idx[i]
+//        //
+//        qext_t* ext_val = ext_base+i;// &w->ext_val[batch*tid+j];
+//        
+//        size_t *ext_index = ext_val->index;
+//        size_t ext_size = ext_index[chn_idx[i]];
+//        
+//
+//        for(int k=0; k<ext_size; k++)
+//        {
+//            swrst_t *sw = getItem(ext_val,k);
+//            swseq_t *seq = sw->sw_seq;
+//            if(seq->qlen!=0)
+//            {
+//                sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+//            }
+//        }
+//    }
+//
+    //finalize
+    for(int i=0; i<batch; i++)
+    {
+        qext_t* ext_val = ext_base+i;
+        size_t *ext_index = ext_val->index;
+        size_t ext_size = ext_index[chn_idx[i]];
+        
+        size_t ptr = batch_id[i];
+        
+        swrst_t * sws =getItem(ext_val,0);
+        memcpy(sws, g_srt+ptr, ext_size*sizeof(swrst_t));
+    }
+    
+    free(batch_id);
+    //free(g_srt);
 }
 
 static void worker_mod_batch(void *data, int start, int batch, int tid)
