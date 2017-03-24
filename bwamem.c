@@ -2303,8 +2303,8 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	mem_pestat_t pes[4];
 	double ctime, rtime;
 	int i;
-
-    int batch_size = 500;
+    int batch = 500;
+    int batch_size = batch*((opt->flag&MEM_F_PE)?2:1) ;
     
 	ctime = cputime(); rtime = realtime();
 	global_bns = bns;
@@ -2327,7 +2327,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     //fprintf(stderr,"=====> size of swrst_t is %ld   <=====\n", sizeof(swrst_t));
     fprintf(stderr,"=====> Processing %d batchs of read <=====\n", n);
     fprintf(stderr,"=====> Processing %d batchs of read iner <=====\n", batch_size);
-    kt_for_batch2(opt->n_threads, batch_size*(opt->flag&MEM_F_PE)?2:1, worker_mod_batch, &w, n);
+    kt_for_batch2(opt->n_threads, batch_size, worker_mod_batch, &w, n);
     
     free(w.ext_val);
 #ifdef DEBUG
