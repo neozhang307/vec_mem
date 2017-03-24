@@ -80,7 +80,7 @@ typedef struct kt_for_t_batch {
     int s_batch;
     long n;
     ktf_worker_t_batch *w;
-    void (*func_batch)(void*,long,long,int,int);
+    void (*func_batch)(void*,long,int,int);
     void *data;
 } kt_for_t_batch;
 
@@ -100,11 +100,11 @@ static inline long steal_work_batch(kt_for_t_batch *t, int step)
     return k >= t->n? -1 : k;
 }
 
-void process_batch(void *data, long start, long end, int batch, int tid)
+void process_batch(void *data, long start, int batch, int tid)
 {
     long i = start;
     batch_pack *pck = (batch_pack*)data;
-    for(int j=0; i<end&&j<batch; j++,i++)
+    for(int j=0; j<batch; j++,i++)
     {
         pck->func(pck->data, i, tid);//compute it in
     }
@@ -114,15 +114,20 @@ static void *ktf_worker_batch(void *data)
 {
     ktf_worker_t_batch *w = (ktf_worker_t_batch*)data;
     long i;
+    int batch;
     int step = w->t->n_threads*w->t->s_batch;
     for (;;) {
         i = __sync_fetch_and_add(&w->i, step);
-        w->t->func_batch(w->t->data,i,w->t->n,w->t->s_batch,w - w->t->w);
+        batch = w->t->n-i < w->t->s_batch? w->t->n-i:w->t->s_batch;
+        w->t->func_batch(w->t->data,i, batch,w - w->t->w);
         if(i+step>w->t->n)break;
 
     }
     while ((i = steal_work_batch(w->t,step)) >= 0)
-        w->t->func_batch(w->t->data,i,w->t->n,w->t->s_batch,w - w->t->w);
+    {
+        batch = w->t->n-i < w->t->s_batch? w->t->n-i:w->t->s_batch;
+        w->t->func_batch(w->t->data,i,batch,w - w->t->w);
+    }
     pthread_exit(0);
 }
 
@@ -150,7 +155,7 @@ void kt_for_batch(int n_threads, int batch_size, void (*func)(void*,long,int), v
     for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 }
 
-void kt_for_batch2(int n_threads, int batch_size, void (*func)(void*,long,long,int,int), void *data, long n)
+void kt_for_batch2(int n_threads, int batch_size, void (*func)(void*,long,int,int), void *data, long n)
 {
     int i;
     kt_for_t_batch t;
