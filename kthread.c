@@ -119,6 +119,7 @@ static void *ktf_worker_batch(void *data)
     for (;;) {
         i = __sync_fetch_and_add(&w->i, step);
         batch = w->t->n-i < w->t->s_batch? w->t->n-i:w->t->s_batch;
+        batch = 0>batch? 0:batch;
         w->t->func_batch(w->t->data,i, batch,w - w->t->w);
         if(i+step>w->t->n)break;
 
@@ -126,6 +127,7 @@ static void *ktf_worker_batch(void *data)
     while ((i = steal_work_batch(w->t,step)) >= 0)
     {
         batch = w->t->n-i < w->t->s_batch? w->t->n-i:w->t->s_batch;
+        batch = 0>batch? 0:batch;
         w->t->func_batch(w->t->data,i,batch,w - w->t->w);
     }
     pthread_exit(0);
