@@ -2083,19 +2083,16 @@ void mem_chain_extent_batch2(void *data, int start, int end, int batch, int tid,
         
         mem_chain_v chn =  w->chn[i];
         size_t *index = ext_val->index;
+        size_t max_id = index[chn.n];
+        swrst_t * sws =func(ext_val,index[0]);
         
-        for (int i = 0; i < chn.n; ++i) {
-            const mem_chain_t *c = &chn.a[i];
-            if (c->n == 0) continue;
-            swrst_t * sws =func(ext_val,index[i]);// &ext_val->g_swfwd[index[i]];
-            
-            for (int k = 0; k < c->n; ++k) {
-                swrst_t *sw = &sws[k];
-                swseq_t *seq = sw->sw_seq;
-                if(seq->qlen!=0)
-                {
-                    sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-                }
+        for(int k=0; k<max_id; k++)
+        {
+            swrst_t *sw = &sws[k];
+            swseq_t *seq = sw->sw_seq;
+            if(seq->qlen!=0)
+            {
+                sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
             }
         }
     }
@@ -2176,6 +2173,54 @@ static void worker_chains2aln_batch(void *data, int start, int end, int batch, i
         mem_chains2aln_finalize( w->chn[i], ext_val);
     }
 }
+
+static void worker_mod_batch(void *data, int start, int end, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        w->chn[i] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+    }
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
+        
+        mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+        
+    }
+    mem_chain_extent_batch2(data, start, end, batch, tid, fwd);
+    
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
+        
+        mem_chain_v chn =  w->chn[i];
+        size_t *index = ext_val->index;
+        size_t max_idx = index[chn.n];
+        swrst_t * swfwd = &ext_val->g_swfwd[0];
+        swrst_t * swbwd = &ext_val->g_swbwd[0];
+        for(int i=0; i<max_idx; i++)
+        {
+            int pre_score= swfwd[i].score;
+            swrst_t *swbwd_ = &swbwd[i];
+            swbwd_->h0=pre_score;
+        }
+    }
+    mem_chain_extent_batch2(data, start, end, batch, tid, bwd);
+    
+    
+    for(int i=start,j=0; i<end&&j<batch; ++j,++i)
+    {
+        qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
+        
+        mem_alnreg_v regs;
+        kv_init(regs);
+        mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
+        //finalize
+        w->regs[i] = regs;
+        mem_chains2aln_finalize( w->chn[i], ext_val);
+    }
+}
 /*********************************************************/
 /*********************************************************/
 /*this function is modified by Lingqi Zhang*/
@@ -2208,11 +2253,11 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
      NEO: this statement need to change to batch mode
      */
     if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
-    kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
+   // kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
 
     fprintf(stderr,"=====> Processing %d batchs of read <=====\n", n);
     fprintf(stderr,"=====> Processing %d batchs of read iner <=====\n", batch_size);
-    kt_for_batch2(opt->n_threads, batch_size*(opt->flag&MEM_F_PE)?2:1, worker_chains2aln_batch, &w, n);
+    kt_for_batch2(opt->n_threads, batch_size*(opt->flag&MEM_F_PE)?2:1, worker_mod_batch, &w, n);
     
     free(w.ext_val);
 #ifdef DEBUG
