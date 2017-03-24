@@ -1828,7 +1828,7 @@ static void worker_chains2aln_init_batch(void *data, int start, int end, int bat
     {
         qext_t* ext_val = &w->ext_val[i];
     
-        mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+        mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[batch*tid+j], ext_val);
     }
 }
 //GPU
@@ -1872,7 +1872,7 @@ static void worker_chains2aln_mainsw_batch(void *data, int start, int batch, int
     {
         qext_t* ext_val = &w->ext_val[i];
         
-        mem_chain_v chn = w->chn[i];
+        mem_chain_v chn = w->chn[batch*tid+j];
         const mem_opt_t *opt = w->opt;
         const bntseq_t *bns = w->bns;
     
@@ -1923,7 +1923,7 @@ static void worker_chains2aln_preparerext_batch(void *data, int start, int batch
     {
         qext_t* ext_val = &w->ext_val[i];
     
-        mem_chain_v chn = w->chn[i];
+        mem_chain_v chn = w->chn[batch*tid+j];
     
         size_t *index = ext_val->index;
         
@@ -2012,7 +2012,7 @@ static void worker_chains2aln_postsw_batch(void *data, int start, int batch, int
         mem_alnreg_v regs;
     
         kv_init(regs);
-        mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
+        mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[batch*tid+j], ext_val , &regs );
         //finalize
         w->regs[i] = regs;
     }
@@ -2035,7 +2035,7 @@ static void worker_chains2aln_finalize_batch(void *data, int start, int end, int
     {
         qext_t* ext_val = &w->ext_val[i];
     
-        mem_chains2aln_finalize( w->chn[i], ext_val);
+        mem_chains2aln_finalize( w->chn[batch*tid+j], ext_val);
     }
 }
 static void worker_aln2regs(void *data, int i, int tid)
@@ -2081,7 +2081,7 @@ void mem_chain_extent_batch2(void *data, int start, int batch, int tid, swrst_t*
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
         
-        mem_chain_v chn =  w->chn[i];
+        mem_chain_v chn =  w->chn[batch*tid+j];
         size_t *index = ext_val->index;
         size_t max_id = index[chn.n];
         swrst_t * sws =func(ext_val,index[0]);
@@ -2108,7 +2108,7 @@ void mem_chain_extent_batch(void *data, int start, int batch, int tid, swrst_t*(
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
         
-        mem_chain_v chn =  w->chn[i];
+        mem_chain_v chn =  w->chn[batch*tid+j];
         size_t *index = ext_val->index;
         int l_query=ext_val->l_query;
         const uint8_t *query = ext_val->query;
@@ -2142,7 +2142,7 @@ static void worker_chains2aln_batch(void *data, int start, int batch, int tid)
     {
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
-        mem_chain_v chn =  w->chn[i];
+        mem_chain_v chn =  w->chn[batch*tid+j];
         size_t *index = ext_val->index;
     
         for (int i = 0; i < chn.n; ++i) {
@@ -2170,32 +2170,35 @@ static void worker_chains2aln_batch(void *data, int start, int batch, int tid)
         mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
         //finalize
         w->regs[i] = regs;
-        mem_chains2aln_finalize( w->chn[i], ext_val);
+        mem_chains2aln_finalize( w->chn[batch*tid+j], ext_val);
     }
 }
 
 static void worker_mod_batch(void *data, int start, int batch, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
+    //gen chains
     for(int i=start,j=0; j<batch; ++j,++i)
     {
-        w->chn[i] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+        w->chn[batch*tid+j] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
     }
+    //init sw
     for(int i=start,j=0; j<batch; ++j,++i)
     {
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
-        mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val);
+        mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[batch*tid+j], ext_val);
         
     }
     const mem_opt_t *opt = w->opt;
+    //left extension
     swrst_t* (*func)(qext_t*,size_t) = fwd;
     for(int i=start,j=0; j<batch; ++j,++i)
     {
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
         
-        mem_chain_v chn =  w->chn[i];
+        mem_chain_v chn =  w->chn[batch*tid+j];
         size_t *index = ext_val->index;
         size_t max_id = index[chn.n];
         swrst_t * sws =func(ext_val,index[0]);
@@ -2210,11 +2213,12 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             }
         }
     }
+    //init right
     for(int i=start,j=0; j<batch; ++j,++i)
     {
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
-        mem_chain_v chn =  w->chn[i];
+        mem_chain_v chn =  w->chn[batch*tid+j];
         size_t *index = ext_val->index;
         size_t max_idx = index[chn.n];
         swrst_t * swfwd = &ext_val->g_swfwd[0];
@@ -2226,13 +2230,14 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             swbwd_->h0=pre_score;
         }
     }
+    //right extension
     func = bwd;
     for(int i=start,j=0; j<batch; ++j,++i)
     {
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
         
-        mem_chain_v chn =  w->chn[i];
+        mem_chain_v chn =  w->chn[batch*tid+j];
         size_t *index = ext_val->index;
         size_t max_id = index[chn.n];
         swrst_t * sws =func(ext_val,index[0]);
@@ -2247,17 +2252,17 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             }
         }
     }
-    
+    //finalize
     for(int i=start,j=0; j<batch; ++j,++i)
     {
         qext_t* ext_val = &w->ext_val[batch*tid+j];//= malloc(sizeof(qext_t));
         
         mem_alnreg_v regs;
         kv_init(regs);
-        mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[i], ext_val , &regs );
+        mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->chn[batch*tid+j], ext_val , &regs );
         //finalize
         w->regs[i] = regs;
-        mem_chains2aln_finalize( w->chn[i], ext_val);
+        mem_chains2aln_finalize( w->chn[batch*tid+j], ext_val);
     }
 }
 /*********************************************************/
@@ -2278,7 +2283,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	ctime = cputime(); rtime = realtime();
 	global_bns = bns;
 	w.regs = malloc(n * sizeof(mem_alnreg_v));
-    w.chn = malloc(n * sizeof(mem_chain_v));
+    w.chn = malloc(batch_size*opt->n_threads * sizeof(mem_chain_v));
     w.ext_val=malloc(batch_size*opt->n_threads * sizeof(qext_t));
     
 	w.opt = opt; w.bwt = bwt; w.bns = bns; w.pac = pac;
@@ -2303,7 +2308,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     printcount();
     reset();
 #endif
-    for(i=0; i<n; i++)
+    for(i=0; i<batch_size*opt->n_threads; i++)
     {
         free(w.chn[i].a);
     }
