@@ -8,11 +8,13 @@ typedef struct
 typedef struct
 {
     int score;
-    int max_off;
+    int max_off;//64
     
-    int qle,tle;
-    int gtle, gscore;
+    int qle,tle;//64
+    int gtle, gscore;//64
     
-    int h0;
-    swseq_t* sw_seq;
+    int h0;//64
+    swseq_t* sw_seq;//64
 }swrst_t;
+
+

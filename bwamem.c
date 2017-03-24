@@ -2193,7 +2193,6 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         batch_id[i] = cur_id;
         pre_id = cur_id;
     }
-//
     swrst_t* g_srt = malloc(batch_id[batch]*sizeof(swrst_t));
     for(int i=0; i<batch; i++)
     {
@@ -2209,53 +2208,16 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
     }
     //SW
-    
-    for(int i=0; i<batch; ++i)
+    for(int i=0; i<batch_id[batch];++i)
     {
-        //i: 0-batch
-        //     j: 0 - chn_idx[i]
-        //
-        qext_t* ext_val = ext_base+i;// &w->ext_val[batch*tid+j];
-        
-        size_t *ext_index = ext_val->index;
-        size_t ext_size = ext_index[chn_idx[i]];
-        
-        size_t ptr = batch_id[i];
-        for(int k=0; k<ext_size; k++)
+        swrst_t *sw = g_srt+i;
+        swseq_t *seq = sw->sw_seq;
+        if(seq->qlen!=0)
         {
-            swrst_t *sw = g_srt+ptr+k;
-            swseq_t *seq = sw->sw_seq;
-            if(seq->qlen!=0)
-            {
-                sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-            }
+            sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
         }
+        
     }
-    
-    //finalize
-//    
-//    for(int i=0; i<batch; ++i)
-//    {
-//        //i: 0-batch
-//        //     j: 0 - chn_idx[i]
-//        //
-//        qext_t* ext_val = ext_base+i;// &w->ext_val[batch*tid+j];
-//        
-//        size_t *ext_index = ext_val->index;
-//        size_t ext_size = ext_index[chn_idx[i]];
-//        
-//
-//        for(int k=0; k<ext_size; k++)
-//        {
-//            swrst_t *sw = getItem(ext_val,k);
-//            swseq_t *seq = sw->sw_seq;
-//            if(seq->qlen!=0)
-//            {
-//                sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-//            }
-//        }
-//    }
-//
     //finalize
     for(int i=0; i<batch; i++)
     {
@@ -2362,7 +2324,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
      */
     if (bwa_verbose >= 4) printf("=====> Processing %d batchs of read <=====\n", n);
    // kt_for_batch(opt->n_threads, (opt->flag&MEM_F_PE)?2:1, worker_gen_chains, &w, n);
-
+    //fprintf(stderr,"=====> size of swrst_t is %ld   <=====\n", sizeof(swrst_t));
     fprintf(stderr,"=====> Processing %d batchs of read <=====\n", n);
     fprintf(stderr,"=====> Processing %d batchs of read iner <=====\n", batch_size);
     kt_for_batch2(opt->n_threads, batch_size*(opt->flag&MEM_F_PE)?2:1, worker_mod_batch, &w, n);
