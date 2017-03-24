@@ -8,23 +8,38 @@
 void store(swrst_t* data, size_t size, const char* filename)
 {
     FILE* output = fopen(filename,"wb+");
-    fwrite(&size, sizeof(int), 1, output);
-    
+    assert(output!=NULL);
+    fwrite(&size, sizeof(size_t), 1, output);
     for(int i=0; i<size; i++)
     {
-        fwrite(data, sizeof(swrst_t), size, output);
+        fwrite(data, sizeof(swrst_t)*size, 1, output);
     }
   
     for(int i=0; i<size; i++)
     {
-        int qlen = data->sw_seq->qlen;
-        const uint8_t* q = data->sw_seq->query;
-        int rlen = data->sw_seq->qlen;
-        const uint8_t* r = data->sw_seq->ref;
+        int qlen = data[i].sw_seq->qlen;
+        
+        int rlen = data[i].sw_seq->rlen;
         fwrite(&qlen, sizeof(int), 1, output);
-        fwrite(q, sizeof(uint8_t), qlen, output);
         fwrite(&rlen, sizeof(int), 1, output);
-        fwrite(r, sizeof(uint8_t), rlen, output);
+    }
+    for(int i=0; i<size; i++)
+    {
+        
+        int qlen = data[i].sw_seq->qlen;
+        int rlen = data[i].sw_seq->rlen;
+        const uint8_t* q = data[i].sw_seq->query;
+        const uint8_t* r = data[i].sw_seq->ref;
+        if(qlen!=0)
+        {
+
+            fwrite(q, sizeof(uint8_t)*qlen, 1, output);
+        }
+        if(rlen!=0)
+        {
+            fwrite(r, sizeof(uint8_t)*rlen, 1, output);
+        }
+
     }
     fclose(output);
 }
@@ -34,33 +49,52 @@ size_t load(swrst_t** data, const char* filename)
     FILE* input = fopen(filename,"rb");
     if(input==NULL)
         return -1;
-    int size;
-    fread(&size, sizeof(int), 1, input);
-    
+    size_t size;
+    fread(&size, sizeof(size_t), 1, input);
     *data = malloc(sizeof(swrst_t)*size);
     swseq_t* seqs = malloc(sizeof(swseq_t)*size);
     for(int i=0; i<size; i++)
     {
-        fread(*data, sizeof(swrst_t), size, input);
+        fread(*data, sizeof(swrst_t)*size, 1, input);
     }
     
     for(int i=0; i<size; i++)
     {
         int qlen;// = data->sw_seq->qlen;
-        uint8_t* q ;// = data->sw_seq->query;
         int rlen;// = data->sw_seq->qlen;
-        uint8_t* r ;//= data->sw_seq->ref;
         fread(&qlen, sizeof(int), 1, input);
-        q = malloc(sizeof(uint8_t)* qlen);
-        fread(q, sizeof(uint8_t), qlen, input);
         fread(&rlen, sizeof(int), 1, input);
-        r = malloc(sizeof(uint8_t)* rlen);
-        fread(r, sizeof(uint8_t), rlen, input);
-        seqs[i].qlen=qlen;
-        seqs[i].rlen=rlen;
+        seqs[i].qlen = qlen;
+        seqs[i].rlen = rlen;
+    //    assert(qlen>=0);
+      //  assert(rlen>=0);
+    }
+    for(int i=0; i<size; i++)
+    {
+        int qlen = seqs[i].qlen;
+        int rlen = seqs[i].rlen;
+        uint8_t*q;
+        uint8_t*r;
+        if(qlen>0)
+        {
+            q = malloc(sizeof(uint8_t)* qlen);
+            fread(q, sizeof(uint8_t)*qlen, 1, input);
+        }
+        else{
+            q = NULL;
+        }
+        
+        if(rlen>0)
+        {
+            r = malloc(sizeof(uint8_t)* rlen);
+            fread(r, sizeof(uint8_t)*rlen, 1, input);
+        }
+        else{
+            r=NULL;
+        }
         seqs[i].query = q;
         seqs[i].ref = r;
-        data[0][i].sw_seq=seqs;
+        (*data)[i].sw_seq=&seqs[i];
     }
     fclose(input);
     return size;
@@ -75,7 +109,12 @@ static int g_zdrop;
 
 void finalize_load(swrst_t*data)
 {
-    free(data->sw_seq);
+    if(data==NULL)return;
+    if(data->sw_seq!=NULL)
+    {
+        free(data->sw_seq);
+        data->sw_seq = NULL;
+    }
     free(data);
 }
 
