@@ -2208,6 +2208,13 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
     }
     //SW
+ //   store(g_srt,batch_id[batch],"sw_start.bin");
+  //  swrst_t* nsrt;
+  //  init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+  //  store_config();
+  //  size_t nread = load(&nsrt,"sw_start.bin");
+  //  assert(nread==batch_id[batch]);
+   // fprintf(stderr, "1 nread is %ld while ori is %ld and batch size is %d\n",nread, batch_id[batch],batch);
     for(int i=0; i<batch_id[batch];++i)
     {
         swrst_t *sw = g_srt+i;
@@ -2216,8 +2223,21 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         {
             sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
         }
-        
     }
+  //  finalize_load(nsrt);
+   // store(g_srt,batch_id[batch],"sw_end.bin");
+ //   nread = load(&nsrt,"sw_end.bin");
+ //   fprintf(stderr, "2 nread is %ld while ori is %ld\n",nread, batch_id[batch]);
+   // assert(nread==batch_id[batch]);
+ //   for(int i=0; i<nread; i++)
+ //   {
+ //       assert(g_srt[i].score==nsrt[i].score);
+//        assert(g_srt[i].qle==nsrt[i].qle);
+ //       assert(g_srt[i].tle==nsrt[i].tle);
+//        assert(g_srt[i].gtle==nsrt[i].gtle);
+ //       assert(g_srt[i].gscore==nsrt[i].gscore);
+ //       assert(g_srt[i].max_off==nsrt[i].max_off);
+ //   }
     //finalize
     for(int i=0; i<batch; i++)
     {
@@ -2304,7 +2324,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	double ctime, rtime;
 	int i;
 
-    int batch_size = 500;
+    int batch_size = 10000;
     
 	ctime = cputime(); rtime = realtime();
 	global_bns = bns;
@@ -2327,7 +2347,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     //fprintf(stderr,"=====> size of swrst_t is %ld   <=====\n", sizeof(swrst_t));
     fprintf(stderr,"=====> Processing %d batchs of read <=====\n", n);
     fprintf(stderr,"=====> Processing %d batchs of read iner <=====\n", batch_size);
-    kt_for_batch2(opt->n_threads, batch_size*(opt->flag&MEM_F_PE)?2:1, worker_mod_batch, &w, n);
+    kt_for_batch2(opt->n_threads, batch_size*((opt->flag&MEM_F_PE)?2:1), worker_mod_batch, &w, n);
     
     free(w.ext_val);
 #ifdef DEBUG
