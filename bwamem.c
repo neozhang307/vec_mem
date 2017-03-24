@@ -2270,7 +2270,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     }
     
     free(batch_id);
-    //free(g_srt);
+    free(g_srt);
 }
 
 static void worker_mod_batch(void *data, int start, int batch, int tid)
