@@ -308,7 +308,7 @@ typedef struct {
 
 
 
-#define sortlen(a, b) ((uint32_t)(a) > (uint32_t)(b))
+#define sortlen(a, b) ((uint32_t)(a) < (uint32_t)(b))
 KSORT_INIT(uint64_t, uint64_t, sortlen)
 
 
@@ -329,34 +329,18 @@ void ksw_extend_batch2(swrst_t* swrts, size_t size)
         swlen[i]=tval;
     }
     ks_introsort(uint64_t,size,swlen);
-    assert(swlen[0]>>32==0);
+    assert((uint32_t)swlen[0]==0);
     int ptr = 0;
-    for(ptr=0;swlen[ptr]>>32==0&&ptr<size; ptr++);
+    while((uint32_t)swlen[ptr]==0&&ptr<size) ptr++;
     
-//    int batch = 8;//16 or 8
-//    //process batch of seeds a time
-//    //compute size of
-//    int totalsize=0;
-//    int i = 0;
-//    for(i=ptr+batch-1; i<size; i+=batch)
-//    {
-//        totalsize += (uint32_t)swlen[i];
-//    }
-//    uint8_t* qpdb=malloc(totalsize);
-//    uint8_t fill = 4;
-//    memset_pattern8(qpdb, &fill, totalsize*g_m);
-//    uint8_t* rdb = malloc(totalsize);
-//    memset_pattern8(rdb, &fill, totalsize);
-    //fill rdb:
-
     
     
     for(int i=ptr; i<size;++i)
     {
         swrst_t *sw = swrts+(swlen[i]>>32);//i;
         swseq_t *seq = sw->sw_seq;
-    //    if(seq->qlen!=0)//NEO: ensure by sorting
-    //    {
+   //     if(seq->qlen!=0)//NEO: ensure by sorting
+        {
             
             int qlen = seq->qlen;
             int tlen = seq->rlen;
@@ -473,8 +457,8 @@ void ksw_extend_batch2(swrst_t* swrts, size_t size)
                 sw->gscore = gscore;
                 sw->max_off = max_off;
                 sw->score = max;
-         //   }
-                
+            }
+            
         }
     }
     
@@ -646,7 +630,7 @@ int main()
     double ctime = cputime();
     double rtime = realtime();
     
-    ksw_extend_batch(nsrt, nread);
+    ksw_extend_batch2(nsrt, nread);
     
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);

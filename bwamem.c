@@ -2176,7 +2176,7 @@ static void worker_chains2aln_batch(void *data, int start, int batch, int tid)
 }
 
 //future SIMD
-void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*getItem)(qext_t*,size_t))
+void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*getItem)(qext_t*,size_t), int start,  int tid)
 {
     //init
     size_t* batch_id = malloc((batch+1)*sizeof(size_t));
@@ -2208,47 +2208,19 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
     }
     //SW
-    store(g_srt,batch_id[batch],"sw_start.bin");
-    swrst_t* nsrt;
-  //  init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
-    //store_config();
-    size_t nread = load(&nsrt,"sw_start.bin");
-//    fprintf(stderr, "read items: %ld, real: %ld\n",nread,batch_id[batch]);
-//    for(int i=0; i<nread; i++)
-//    {
-//        swrst_t *sw_real = g_srt+i;
-//        swrst_t *sw_read = nsrt+i;
-//        fprintf(stderr,"READ\t: score %d, h0 %d,\n",sw_read->score,sw_read->h0);
-//        fprintf(stderr,"ORI\t: score %d, h0 %d,\n",sw_real->score,sw_real->h0);
-//        fprintf(stderr,"READ\t: qlen %d, rlen %d,\n",sw_read->sw_seq->qlen,sw_read->sw_seq->rlen);
-//        fprintf(stderr,"ORI\t: qlen %d, rlen %d,\n",sw_real->sw_seq->qlen,sw_real->sw_seq->rlen);
-//        fprintf(stderr,"READq\t:");
-//        for(int i=0; i<sw_read->sw_seq->qlen; i++)
-//        {
-//            fprintf(stderr,"%d",sw_read->sw_seq->query[i]);
-//        }
-//        fprintf(stderr,"\nORIq\t:");
-//        for(int i=0; i<sw_real->sw_seq->qlen; i++)
-//        {
-//            fprintf(stderr,"%d",sw_real->sw_seq->query[i]);
-//        }
-//        fprintf(stderr,"\nREADr\t:");
-//        for(int i=0; i<sw_read->sw_seq->rlen; i++)
-//        {
-//            fprintf(stderr,"%d",sw_read->sw_seq->ref[i]);
-//        }
-//        fprintf(stderr,"\nORIq\t:");
-//        for(int i=0; i<sw_real->sw_seq->rlen; i++)
-//        {
-//            fprintf(stderr,"%d",sw_real->sw_seq->ref[i]);
-//        }
-//        fprintf(stderr,"\n");
-//    }
-    swrst_t* tmp = g_srt;
-    g_srt = nsrt;
-//    fprintf(stderr, "1 nread is %ld while ori is %ld and batch size is %d\n",nread, batch_id[batch],batch);
-//    fprintf(stderr, "score0 = %d h0 = %d\n",nsrt->score,nsrt->h0);
-//    assert(nread==batch_id[batch]);
+//    kstring_t str={0,0,0};
+//    kputs("sw_start_",&str);
+//    kputl(start,&str);
+//    kputc('_',&str);
+//    kputl(tid,&str);
+//    kputc('_',&str);
+//    kputl(batch,&str);
+//    kputs(".bin",&str);
+//    store(g_srt,batch_id[batch],str.s);
+    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+    store_config();
+    load_config();
+    fprintf(stderr,"the check result is %d \n",check_config(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop));
     for(int i=0; i<batch_id[batch];++i)
     {
         swrst_t *sw = g_srt+i;
@@ -2258,22 +2230,20 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
             sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
         }
     }
-    for(int i=0; i<batch_id[batch];++i)
-    {
-        swrst_t *swr = g_srt+i;
-        swrst_t *swt = tmp+i;
-        if(swr->sw_seq->qlen!=0)
-        {
-            swt->score = swr->score;
-            swt->qle = swr->qle;
-            swt->tle = swr->tle;
-            swt->gtle = swr->tle;
-            swt->gscore = swr->gscore;
-            swt->max_off = swr->max_off;
-        }
-    }
-    g_srt = tmp;
-    
+//
+//    free(str.s);
+//    str.l=0;
+//    str.m=0;
+//    str.s=0;
+//    kputs("sw_end_",&str);
+//    kputl(start,&str);
+//    kputc('_',&str);
+//    kputl(tid,&str);
+//    kputc('_',&str);
+//    kputl(batch,&str);
+//    kputs(".bin",&str);
+//    store(g_srt,batch_id[batch],str.s);
+//    free(str.s);
     //finalize
     for(int i=0; i<batch; i++)
     {
@@ -2314,7 +2284,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     const mem_opt_t *opt = w->opt;
     
     //left extension
-    mem_chain_extent_batch3(opt, ext_base, chn_idx, batch, fwd);
+    mem_chain_extent_batch3(opt, ext_base, chn_idx, batch, fwd,start, tid);
     //init right
     for(int j=0; j<batch; ++j)
     {
@@ -2332,7 +2302,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         }
     }
     //right extension
-    mem_chain_extent_batch3(opt, ext_base, chn_idx, batch, bwd);
+    mem_chain_extent_batch3(opt, ext_base, chn_idx, batch, bwd,start,tid);
     //finalize
     for(int i=start,j=0; j<batch; ++j,++i)
     {
@@ -2360,7 +2330,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	double ctime, rtime;
 	int i;
 
-    int batch = 100;
+    int batch = 1000;
     int batch_size = batch*((opt->flag&MEM_F_PE)?2:1) ;
     
 	ctime = cputime(); rtime = realtime();
