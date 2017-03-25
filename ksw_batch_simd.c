@@ -162,17 +162,29 @@ void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, 
 int check_config(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
     if(m!=5)
+    {
         return -1;
+    }
     if(o_del!=g_o_del)
+    {
         return -2;
+    }
     if(e_del!=g_e_del)
+    {
         return -3;
+    }
     if(o_ins!=g_o_ins)
+    {
         return -5;
+    }
     if(e_ins!=g_e_ins)
+    {
         return -6;
+    }
     if(zdrop!=g_zdrop)
+    {
         return -7;
+    }
     for(int i=0; i<25; i++)
     {
         if(g_mat[0][i]!=mat[i])
@@ -307,13 +319,20 @@ typedef struct {
 #include"ksort.h"
 
 
-
+//ensure the sequence len is ascending
 #define sortlen(a, b) ((uint32_t)(a) < (uint32_t)(b))
 KSORT_INIT(uint64_t, uint64_t, sortlen)
 
 
+typedef struct{
+    
+    uint32_t len;
+    uint32_t alined;
+    size_t global_batch_id;//index of a batch in whole DB
+    uint8_t local_id_y;//idx inside batch
+}hash_t;
 
-void ksw_extend_batch2(swrst_t* swrts, size_t size)
+void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 {
     //sort
     assert(size>=0);
@@ -333,19 +352,87 @@ void ksw_extend_batch2(swrst_t* swrts, size_t size)
     int ptr = 0;
     while((uint32_t)swlen[ptr]==0&&ptr<size) ptr++;
     
+    //recompute space size
+    uint8_t batch = 16;//16 | 8
     
+    uint32_t resize = size-ptr;
+    uint32_t resize_segs = (resize+batch-1)/batch;//skip zero ones
+    uint32_t aligned_resize = resize_segs*batch;
+    uint64_t *swlen_resized = swlen+ptr;
     
-    for(int i=ptr; i<size;++i)
+    hash_t* rdb_hash = malloc(sizeof(hash_t)*aligned_resize);//index related values should be aligned
+    memset(rdb_hash,0,sizeof(hash_t)*aligned_resize);
+    
+    int global_id_x = 0;
+    //break a loop, which is easy to program
     {
-        swrst_t *sw = swrts+(swlen[i]>>32);//i;
+        
+        int aligned_len = 0;
+        int global_batch_id =0;
+        int i=0;//i is batch id x;
+        for(i=0; i<resize_segs-1; i++)//leave last seg alone
+        {
+            aligned_len =(uint32_t)swlen_resized[(i+1)*batch-1];//max one is set to use for alignement
+            uint64_t * tptr = &swlen_resized[i*batch];
+            //last one in a batch
+            global_batch_id = global_id_x*batch;
+            for(int j=0; j<batch; j++)
+            {
+                hash_t* cur_rdb = rdb_hash + i*batch+j;
+                cur_rdb->len = (uint32_t)tptr[j];
+                cur_rdb->alined = aligned_len;
+                cur_rdb->local_id_y = j;
+                cur_rdb->global_batch_id = global_batch_id;
+            }
+            global_id_x+=aligned_len;//point to next position
+        }
+        aligned_len =(uint32_t)swlen[size-1];//must be the last one
+        
+        uint64_t * tptr =  &swlen_resized[i*batch];
+        int j = 0;
+        global_batch_id = global_id_x*batch;
+        for(; (i*batch+j)<resize&&j<batch;j++)
+        {
+            hash_t* cur_rdb = rdb_hash + i*batch+j;
+            cur_rdb->len = (uint32_t)tptr[j];
+            cur_rdb->alined = aligned_len;
+            cur_rdb->local_id_y = j;
+            cur_rdb->global_batch_id = global_batch_id;
+        }
+        for(;j<batch;j++)
+        {
+            hash_t* cur_rdb = rdb_hash + i*batch+j;
+            cur_rdb->len = 0;
+            cur_rdb->alined = aligned_len;
+            cur_rdb->local_id_y = j;
+            cur_rdb->global_batch_id = global_batch_id;
+        }
+        global_id_x +=aligned_len;//point to end position
+    }
+    uint8_t* rdb = malloc(global_id_x*batch);
+    //copy reference to db
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        hash_t* rdb_hash_t = &rdb_hash[i];
+        rdb_hash_t->len=seq->rlen;
+        uint8_t* db_ptr = rdb+rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined;
+        memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
+    }
+    
+  //  for(int i=ptr; i<size;++i)
+    for(int i=0; i<resize;++i)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
         swseq_t *seq = sw->sw_seq;
    //     if(seq->qlen!=0)//NEO: ensure by sorting
         {
-            
+            hash_t* rdb_hash_t = &rdb_hash[i];
             int qlen = seq->qlen;
-            int tlen = seq->rlen;
+            int tlen = rdb_hash_t->len;//seq->rlen;
             const uint8_t *query = seq->query;
-            const uint8_t *target = seq->ref;
+            const uint8_t *target =  rdb+rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined;;//seq->ref;
             int o_del = g_o_del;
             int e_del = g_e_del;
             int o_ins = g_o_ins;
@@ -464,8 +551,9 @@ void ksw_extend_batch2(swrst_t* swrts, size_t size)
     
     
   //  free(qpdb);
-  //  free(rdb);
+    free(rdb);
     free(swlen);
+    free(rdb_hash);
 }
 
 void ksw_extend_batch(swrst_t* swrts, size_t size)
