@@ -420,7 +420,21 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         uint8_t* db_ptr = rdb+rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined;
         memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
     }
-    
+    int8_t* qp_db = malloc(global_id_x*batch*g_m);//should be usingned ,change in the future
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        hash_t* rdb_hash_t = &rdb_hash[i];
+        int qlen =seq->qlen;
+        
+        int8_t* qp = qp_db+g_m*(rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined);
+        const uint8_t* query =seq->query;
+        for (int k = 0, m = 0; k < g_m; ++k) {
+            const int8_t *p = g_mat[k];
+            for (int j = 0; j < qlen; ++j) qp[m++] = p[query[j]];
+        }
+    }
   //  for(int i=ptr; i<size;++i)
     for(int i=0; i<resize;++i)
     {
@@ -448,13 +462,13 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 int i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end, max, max_i, max_j, max_ie, gscore, max_off;
                 assert(h0 > 0);
                 // allocate memory
-                qp = malloc(qlen * m);
+                qp = qp_db+g_m*(rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined);//malloc(qlen * m);
                 eh = calloc(qlen + 1, 8);
                 // generate the query profile
-                for (k = i = 0; k < m; ++k) {
-                    const int8_t *p = &mat[k * m];
-                    for (j = 0; j < qlen; ++j) qp[i++] = p[query[j]];
-                }
+//                for (k = i = 0; k < m; ++k) {
+//                    const int8_t *p = &mat[k * m];
+//                    for (j = 0; j < qlen; ++j) qp[i++] = p[query[j]];
+//                }
                 
                 
                 // fill the first row
@@ -534,7 +548,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 }
                 
                 //finalize
-                free(eh); free(qp);
+                free(eh); //free(qp);
 
                 //post process
                 //result
@@ -550,7 +564,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     }
     
     
-  //  free(qpdb);
+    free(qp_db);
     free(rdb);
     free(swlen);
     free(rdb_hash);
