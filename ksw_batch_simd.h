@@ -29,3 +29,6 @@ void finalize_load(swrst_t*data);
 void load_config();
 void store_config();
 void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
+
+void printdif(swrst_t* a, swrst_t*b, size_t size);
+int check_config(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
