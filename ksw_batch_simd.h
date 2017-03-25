@@ -2,9 +2,9 @@
 #include<stdio.h>
 typedef struct
 {
-    int qlen;
+    uint32_t qlen;
     const uint8_t *query;
-    int rlen;
+    uint32_t rlen;
     const uint8_t *ref;
 }swseq_t;
 typedef struct
