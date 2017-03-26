@@ -18,7 +18,7 @@ typedef struct
     int h0;//64
     swseq_t* sw_seq;//64
 }swrst_t;
-
+void ksw_extend_batch(swrst_t* swrts, size_t size);
 
 void store(swrst_t* data, size_t size, const char* file);
 

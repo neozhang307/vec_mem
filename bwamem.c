@@ -2208,42 +2208,50 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
     }
     //SW
-//    kstring_t str={0,0,0};
-//    kputs("sw_start_",&str);
-//    kputl(start,&str);
-//    kputc('_',&str);
-//    kputl(tid,&str);
-//    kputc('_',&str);
-//    kputl(batch,&str);
-//    kputs(".bin",&str);
-//    store(g_srt,batch_id[batch],str.s);
-    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
-    store_config();
-    load_config();
-    fprintf(stderr,"the check result is %d \n",check_config(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop));
-    for(int i=0; i<batch_id[batch];++i)
+    kstring_t str={0,0,0};
+    if(tid == 0&&start == 8000)
     {
-        swrst_t *sw = g_srt+i;
-        swseq_t *seq = sw->sw_seq;
-        if(seq->qlen!=0)
-        {
-            sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-        }
+    kputs("sw_start_",&str);
+    kputl(start,&str);
+    kputc('_',&str);
+    kputl(tid,&str);
+    kputc('_',&str);
+    kputl(batch,&str);
+    kputs(".bin",&str);
+    store(g_srt,batch_id[batch],str.s);
     }
+//    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+//    store_config();
+//    load_config();
+//    fprintf(stderr,"the check result is %d \n",check_config(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop));
+    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+    ksw_extend_batch(g_srt, batch_id[batch]);
+//    for(int i=0; i<batch_id[batch];++i)
+//    {
+//        swrst_t *sw = g_srt+i;
+//        swseq_t *seq = sw->sw_seq;
+//        if(seq->qlen!=0)
+//        {
+//            sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+//        }
+//    }
 //
-//    free(str.s);
-//    str.l=0;
-//    str.m=0;
-//    str.s=0;
-//    kputs("sw_end_",&str);
-//    kputl(start,&str);
-//    kputc('_',&str);
-//    kputl(tid,&str);
-//    kputc('_',&str);
-//    kputl(batch,&str);
-//    kputs(".bin",&str);
-//    store(g_srt,batch_id[batch],str.s);
-//    free(str.s);
+    if(tid == 0&&start == 8000)
+    {
+    free(str.s);
+    str.l=0;
+    str.m=0;
+    str.s=0;
+    kputs("sw_end_",&str);
+    kputl(start,&str);
+    kputc('_',&str);
+    kputl(tid,&str);
+    kputc('_',&str);
+    kputl(batch,&str);
+    kputs(".bin",&str);
+    store(g_srt,batch_id[batch],str.s);
+    free(str.s);
+    }
     //finalize
     for(int i=0; i<batch; i++)
     {
