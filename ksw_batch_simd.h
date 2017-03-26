@@ -24,7 +24,7 @@ void store(swrst_t* data, size_t size, const char* file);
 
 size_t load(swrst_t** data, const char* file);
 
-void finalize_load(swrst_t*data);
+void finalize_load(swrst_t*data,size_t size);
 
 void load_config();
 void store_config();

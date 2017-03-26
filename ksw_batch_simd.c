@@ -110,11 +110,18 @@ static int g_o_ins;
 static int g_e_ins;
 static int g_zdrop;
 
-void finalize_load(swrst_t*data)
+void finalize_load(swrst_t*data,size_t size)
 {
     if(data==NULL)return;
     if(data->sw_seq!=NULL)
     {
+        for(int i=0; i<size; i++)
+        {
+            free((uint8_t*)data[i].sw_seq->query);
+            data[i].sw_seq->query=NULL;
+            free((uint8_t*)data[i].sw_seq->ref);
+            data[i].sw_seq->ref=NULL;
+        }
         free(data->sw_seq);
         data->sw_seq = NULL;
     }
@@ -413,6 +420,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         global_id_x +=aligned_len;//point to end position
     }
     uint8_t* rdb = malloc(global_id_x*BATCHSIZE);
+    memset(rdb,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
     //copy reference to db
     for(int i=0; i<resize; i++)
     {
@@ -420,19 +428,20 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         swseq_t *seq = sw->sw_seq;
         hash_t* rdb_hash_t = &db_hash[i];
         rdb_hash_t->rlen=seq->rlen;
-        rdb_hash_t->qlen=seq->qlen;
+        
         uint8_t* db_ptr = rdb+rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined;
         memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
     }
     //generate profile
     int8_t* qp_db = malloc(global_id_x*BATCHSIZE*g_m);//should be usingned ,change in the future
+    memset(rdb,-1,sizeof(int8_t)*global_id_x*BATCHSIZE*g_m);
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
         swseq_t *seq = sw->sw_seq;
         hash_t* rdb_hash_t = &db_hash[i];
         int qlen =seq->qlen;
-        
+        rdb_hash_t->qlen=seq->qlen;
         int8_t* qp = qp_db+g_m*(rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined);
         const uint8_t* query =seq->query;
         for (int k = 0, m = 0; k < g_m; ++k) {
@@ -826,8 +835,8 @@ int main()
         fprintf(stderr,"the check result is incorrect\n");
         fprintf(stderr,"which is 0x%02x\n",check);
     }
-    finalize_load(nsrt);
-    finalize_load(rsrt);
+    finalize_load(nsrt,nread);
+    finalize_load(rsrt,rread);
     return 0;
 }
 #endif
