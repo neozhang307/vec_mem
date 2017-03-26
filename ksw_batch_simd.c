@@ -434,7 +434,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     }
     //generate profile
     int8_t* qp_db = malloc(global_id_x*BATCHSIZE*g_m);//should be usingned ,change in the future
-    memset(rdb,-1,sizeof(int8_t)*global_id_x*BATCHSIZE*g_m);
+    memset(qp_db,(int8_t)-1,sizeof(int8_t)*global_id_x*BATCHSIZE*g_m);
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
@@ -487,7 +487,11 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         next_process = remain<BATCHSIZE?remain:BATCHSIZE;
         remain-=BATCHSIZE;
         fprintf(stderr,"remaining: %d\n",remain);
-        for(j=0; j<next_process; j++)
+        for(j=0; j<BATCHSIZE; j++)
+        {
+            g_h0[j] = 0;
+	}
+	for(j=0; j<next_process; j++)
         {
             swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
             g_h0[j] = sw->h0;
@@ -497,11 +501,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             //assert(i*BATCHSIZE+j<resize);
         }
         
-        for(; j<BATCHSIZE; j++)
-        {
-            g_h0[j] = 0;
-            CHECK;
-        }
         
        // swlen_nxt_id = swlen_batch_id;
         db_hash_nxt_id = db_hash_batch_id;
