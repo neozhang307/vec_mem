@@ -470,10 +470,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     
     uint32_t remain = resize;
     uint32_t next_process = BATCHSIZE;
-    for(int i=0; i<resize_segs;++i)
+    for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
     {
-        swlen_batch_id = swlen_resized+i* BATCHSIZE;
-        db_hash_batch_id = db_hash+i*BATCHSIZE;
+        swlen_batch_id = swlen_resized+seg_idx* BATCHSIZE;
+        db_hash_batch_id = db_hash+seg_idx*BATCHSIZE;
         int16_t g_qle[BATCHSIZE];
         int16_t g_tle[BATCHSIZE];
         int16_t g_gtle[BATCHSIZE];
@@ -483,18 +483,20 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         int16_t g_h0[BATCHSIZE];// = sw->h0;
         swlen_nxt_id = swlen_batch_id;
         //threoretically wont work
-        int j = 0;
+        int batch_idx = 0;
         next_process = remain<BATCHSIZE?remain:BATCHSIZE;
-        remain-=BATCHSIZE;
+#ifdef DEBUG
         fprintf(stderr,"remaining: %d\n",remain);
-        for(j=0; j<BATCHSIZE; j++)
+#endif
+        remain-=BATCHSIZE;
+        for(batch_idx=0; batch_idx<BATCHSIZE; batch_idx++)
         {
-            g_h0[j] = 0;
-	}
-	for(j=0; j<next_process; j++)
+            g_h0[batch_idx] = 0;
+        }
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
         {
             swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
-            g_h0[j] = sw->h0;
+            g_h0[batch_idx] = sw->h0;
             swlen_nxt_id++;
             assert(sw->sw_seq->qlen>0);
             //if(swlen_nxt_id==swlen_end)break;
@@ -504,7 +506,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         
        // swlen_nxt_id = swlen_batch_id;
         db_hash_nxt_id = db_hash_batch_id;
-        for(int j=0; j<next_process; j++)
+        for(int batch_idx=0; batch_idx<BATCHSIZE;batch_idx++)
             //process 16 query at a time for uint8; process 8 query at a time for uint16 query
             {
                 
@@ -519,7 +521,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                  // query profile
                 int16_t i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end;
                 int16_t max, max_i, max_j, max_ie, gscore, max_off;
-                int16_t h0=g_h0[j];
+                int16_t h0=g_h0[batch_idx];
                 assert(h0 >= 0);
                 // allocate memory
                 eh = calloc(qlen + 1, 8);
@@ -608,27 +610,27 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 //post process
                 //result
             
-                g_qle[j] = max_j+1;
-                g_tle[j] = max_i+1;
-                g_gtle[j] = max_ie+1;
-                g_gscore[j] = gscore;
-                g_max_off[j] = max_off;
-                g_score[j] = max;
+                g_qle[batch_idx] = max_j+1;
+                g_tle[batch_idx] = max_i+1;
+                g_gtle[batch_idx] = max_ie+1;
+                g_gscore[batch_idx] = gscore;
+                g_max_off[batch_idx] = max_off;
+                g_score[batch_idx] = max;
                 //swlen_nxt_id++;
                 db_hash_nxt_id++;
                 
             }
         
         swlen_nxt_id = swlen_batch_id;
-        for(j=0; j<next_process; j++)
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
         {
             swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
-            sw->qle = g_qle[j];
-            sw->tle = g_tle[j];
-            sw->gtle = g_gtle[j];
-            sw->gscore = g_gscore[j];
-            sw->max_off = g_max_off[j];
-            sw->score = g_score[j];
+            sw->qle = g_qle[batch_idx];
+            sw->tle = g_tle[batch_idx];
+            sw->gtle = g_gtle[batch_idx];
+            sw->gscore = g_gscore[batch_idx];
+            sw->max_off = g_max_off[batch_idx];
+            sw->score = g_score[batch_idx];
             swlen_nxt_id++;
           //  if(swlen_nxt_id==swlen_end)break;
         }
@@ -813,8 +815,8 @@ int main()
     //time
     double ctime = cputime();
     double rtime = realtime();
-    
-    ksw_extend_batch2(nsrt, nread);
+    fprintf(stderr,"now try %ld\n",nread-7);
+    ksw_extend_batch2(nsrt, nread-7);
     
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
@@ -823,7 +825,7 @@ int main()
     size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
     assert(rread==nread);
     //printf("the result is %d\n", cmp(nsrt,rsrt,nread));
-    uint8_t check = printdif(nsrt,rsrt,nread);
+    uint8_t check = printdif(nsrt,rsrt,nread-7);
     if(check==0)
     {
         fprintf(stderr,"the check result is correct\n");
