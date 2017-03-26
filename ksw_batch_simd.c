@@ -324,6 +324,7 @@ typedef struct {
 
 
 #include"ksort.h"
+#include"ktranspose.h"
 
 
 //ensure the sequence len is ascending
@@ -382,6 +383,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         for(i=0; i<resize_segs-1; i++)//leave last seg alone
         {
             aligned_len =(uint32_t)swlen_resized[(i+1)*BATCHSIZE-1];//max one is set to use for alignement
+            aligned_len = ((aligned_len+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
             uint64_t * tptr = &swlen_resized[i*BATCHSIZE];
             //last one in a batch
             global_batch_id = global_id_x*BATCHSIZE;
@@ -420,8 +422,14 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         global_id_x +=aligned_len;//point to end position
     }
     uint8_t* rdb = malloc(global_id_x*BATCHSIZE);
+    uint8_t* rdb_rv = malloc(global_id_x*BATCHSIZE);
     memset(rdb,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
+    memset(rdb_rv,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
     //copy reference to db
+    
+    /***********************/
+    //reference should be reverse
+    //swlen_resize size is resize
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
@@ -430,9 +438,12 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         rdb_hash_t->rlen=seq->rlen;
         
         uint8_t* db_ptr = rdb+rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined;
+        
         memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
     }
+    /***********************/
     //generate profile
+    //qprofile should be aligned to 256bit (16x16)|(8X32)
     int8_t* qp_db = malloc(global_id_x*BATCHSIZE*g_m);//should be usingned ,change in the future
     memset(qp_db,(int8_t)-1,sizeof(int8_t)*global_id_x*BATCHSIZE*g_m);
     for(int i=0; i<resize; i++)
@@ -498,7 +509,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
             g_h0[batch_idx] = sw->h0;
             swlen_nxt_id++;
-            assert(sw->sw_seq->qlen>0);
+            //assert(sw->sw_seq->qlen>0);
             //if(swlen_nxt_id==swlen_end)break;
             //assert(i*BATCHSIZE+j<resize);
         }
@@ -512,8 +523,11 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 
                 int qlen = db_hash_nxt_id->qlen;
                 int tlen = db_hash_nxt_id->rlen;//seq->rlen;
+                /************************/
                 size_t seed_global_id = db_hash_nxt_id->global_batch_id+db_hash_nxt_id->local_id_y*db_hash_nxt_id->alined;
+                /***********************/
                 const uint8_t *target =  rdb+seed_global_id;//seq->ref;
+                /***********************/
                 int8_t *qp = qp_db+g_m*(seed_global_id);//malloc(qlen * m);
                 int ali_len = db_hash_nxt_id->alined;
                 
@@ -543,7 +557,11 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 //for (i = 0; LIKELY(i < tlen); ++i) {
                 for (i = 0; LIKELY(i < ali_len); ++i) {
                     int t, f = 0, h1, m = 0, mj = -1;
+                    
+                    /***********************/
                     int8_t *q = &qp[target[i] * qlen];
+                    /***********************/
+                    
                     // apply the band and the constraint (if provided)
                     //        if (beg < i - w) beg = i - w;
                     //        if (end > i + w + 1) end = i + w + 1;
@@ -634,9 +652,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             swlen_nxt_id++;
           //  if(swlen_nxt_id==swlen_end)break;
         }
-        
-//        swlen_batch_id+=BATCHSIZE;
-//        db_hash_batch_id+=BATCHSIZE;
     }
     
     
