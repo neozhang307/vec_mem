@@ -471,8 +471,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     /***********************/
     //generate profile
     //qprofile should be aligned to 256bit (16x16)|(8X32)
-    int8_t* qp_db = malloc(global_id_x*BATCHSIZE*g_m);//should be usingned ,change in the future
-    memset(qp_db,(int8_t)-1,sizeof(int8_t)*global_id_x*BATCHSIZE*g_m);
+    int16_t* qp_db = malloc(global_id_x*BATCHSIZE*g_m*sizeof(int16_t));//should be usingned ,change in the future
+    memset(qp_db,(int16_t)-1,sizeof(int16_t)*global_id_x*BATCHSIZE*g_m);
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
@@ -480,7 +480,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         hash_t* rdb_hash_t = &db_hash[i];
         int qlen =seq->qlen;
         rdb_hash_t->qlen=seq->qlen;
-        int8_t* qp = qp_db+g_m*(rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined);
+        int16_t* qp = qp_db+g_m*(rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined);
         const uint8_t* query =seq->query;
         for (int k = 0, m = 0; k < g_m; ++k) {
             const int8_t *p = g_mat[k];
@@ -553,7 +553,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 //const uint8_t *target_batch =  rdb+batch_global_id;//seq->ref; //BATCHSIZE * alignLen;
                 const uint8_t *target_rev_batch =  rdb_rev+batch_global_id;//seq->ref; //alignLen * BATCHSIZE
                 /***********************/
-                int8_t *qp = qp_db+g_m*(seed_global_id);//malloc(qlen * m);
+                int16_t *qp = qp_db+g_m*(seed_global_id);//malloc(qlen * m);
                 int ali_len = db_hash_nxt_id->alined;
                 
                 eh_m *eh; // score array
@@ -584,7 +584,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                     
                     /***********************/
                     uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
-                    int8_t *q = &qp[nxt_target * qlen];
+                    int16_t *q = &qp[nxt_target * qlen];
                     
                     /***********************/
                     
