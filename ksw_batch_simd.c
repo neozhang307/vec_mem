@@ -722,31 +722,49 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         }
       //  int16_t begs[8];
         //int16_t neds[8];
+        int16_t ts[8], fs[8] , h1s[8], ms[8], mjs[8];
+        int16_t h_ls[8], m_ls[8], mj_ls[8];
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
         {
             begs[process_batch_id]=0;
             ends[process_batch_id]=qlens[process_batch_id];
+
         }
+        
+
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
         {
             /***********************/
-            const int16_t *qp = qp_batch_nxt+process_batch_id*g_m*align_end;//+g_m*((process_batch_id )*align_end);//malloc(qlen * m);
+            const int16_t *qp = qp_batch_nxt+process_batch_id*g_m*align_end;
             // query profile
-            int16_t i, j;
+        int16_t i, j;
             // allocate memory
             //MAIN SW
-            for (i = 0; LIKELY(i < tlens[process_batch_id]); ++i) {
-                int t, f = 0, h1, m = 0, mj = -1;
-                int h_l=0, m_l=0, mj_l=0;
+        for (i = 0; LIKELY(i < maxtlen); ++i) {
+                begs[process_batch_id]=0;
+                ends[process_batch_id]=qlens[process_batch_id];
+                
+                fs[process_batch_id]=0;
+                ms[process_batch_id]=0;
+                mjs[process_batch_id]=-1;
+                h_ls[process_batch_id]=0;
+                m_ls[process_batch_id]=0;
+                mj_ls[process_batch_id]=0;
+                
+                //int16_t m = ms[process_batch_id];
+                //int16_t mj = mjs[process_batch_id];
+                //int16_t h_l=h_ls[process_batch_id];
+                //int16_t m_l=m_ls[process_batch_id];
+                //int16_t mj_l=mj_ls[process_batch_id];
                 /***********************/
                 uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+process_batch_id + grid_process_batch_idx*8];
                 const  int16_t *q = &qp[nxt_target * align_end];
                 
                 // compute the first column
                 if ( begs[process_batch_id] == 0) {
-                    h1 = h0s[process_batch_id] - (o_del + e_del * (i + 1));
-                    if (h1 < 0) h1 = 0;
-                } else h1 = 0;
+                    h1s[process_batch_id] = h0s[process_batch_id] - (o_del + e_del * (i + 1));
+                    if (h1s[process_batch_id] < 0) h1s[process_batch_id] = 0;
+                } else h1s[process_batch_id] = 0;
                 //processing a row
                 for (j =  begs[process_batch_id]; LIKELY(j < ends[process_batch_id]); ++j) {
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
@@ -756,46 +774,47 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
 
                     int h, M = ehs[j][process_batch_id].h, e = ehs[j][process_batch_id].e; // get H(i-1,j-1) and E(i-1,j)
-                    ehs[j][process_batch_id].h = h1;          // set H(i,j-1) for the next row
+                    
+                    ehs[j][process_batch_id].h = h1s[process_batch_id];          // set H(i,j-1) for the next row
                     M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
                     h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
-                    h = h > f? h : f;
-                    h1 = h;             // save H(i,j) to h1 for the next column
-                    mj = m > h? mj : j; // record the position where max score is achieved
-                    m = m > h? m : h;   // m is stored at eh[mj+1]
-                    t = M - oe_del;
-                    t = t > 0? t : 0;
+                    h = h > fs[process_batch_id]? h : fs[process_batch_id];
+                    h1s[process_batch_id] = h;             // save H(i,j) to h1 for the next column
+                    mjs[process_batch_id] = ms[process_batch_id] > h?  mjs[process_batch_id] : j; // record the position where max score is achieved
+                    ms[process_batch_id] = ms[process_batch_id] > h? ms[process_batch_id] : h;   // m is stored at eh[mj+1]
+                    ts[process_batch_id] = M - oe_del;
+                    ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
                     e -= e_del;
-                    e = e > t? e : t;   // computed E(i+1,j)
+                    e = e > ts[process_batch_id]? e : ts[process_batch_id];   // computed E(i+1,j)
                     ehs[j][process_batch_id].e = e;           // save E(i+1,j) for the next row
-                    t = M - oe_ins;
-                    t = t > 0? t : 0;
-                    f -= e_ins;
-                    f = f > t? f : t;   // computed F(i,j+1)
+                    ts[process_batch_id] = M - oe_ins;
+                    ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
+                    fs[process_batch_id] -= e_ins;
+                    fs[process_batch_id] = fs[process_batch_id] > ts[process_batch_id]? fs[process_batch_id] : ts[process_batch_id];   // computed F(i,j+1)
                     //record last h1, m, mj
-                    h_l=j<ends[process_batch_id]?h1:h_l;
-                    m_l=j<ends[process_batch_id]?m:m_l;
-                    mj_l=j<ends[process_batch_id]?mj:mj_l;
+                    h_ls[process_batch_id]=j<ends[process_batch_id]?h1s[process_batch_id]:h_ls[process_batch_id];
+                    m_ls[process_batch_id]=j<ends[process_batch_id]?ms[process_batch_id]: m_ls[process_batch_id];
+                    mj_ls[process_batch_id]=j<ends[process_batch_id]? mjs[process_batch_id]:mj_ls[process_batch_id];
                 }
                 j=j<ends[process_batch_id]?j:ends[process_batch_id];
-                h1=h_l;
-                m=m_l;
-                mj=mj_l;
-                h1=i<tlens[process_batch_id]?h1:0;
-                ehs[ends[process_batch_id]][process_batch_id].h = h1; ehs[ends[process_batch_id]][process_batch_id].e = 0;
+                h1s[process_batch_id]=h_ls[process_batch_id];
+                ms[process_batch_id]= m_ls[process_batch_id];
+                mjs[process_batch_id]=mj_ls[process_batch_id];
+                h1s[process_batch_id]=i<tlens[process_batch_id]?h1s[process_batch_id]:0;
+                ehs[ends[process_batch_id]][process_batch_id].h = h1s[process_batch_id]; ehs[ends[process_batch_id]][process_batch_id].e = 0;
                 if (j == qlens[process_batch_id]) {
-                    max_ies[process_batch_id] = gscores[process_batch_id] > h1? max_ies[process_batch_id] : i;
-                    gscores[process_batch_id] = gscores[process_batch_id] > h1? gscores[process_batch_id] : h1;
+                    max_ies[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? max_ies[process_batch_id] : i;
+                    gscores[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? gscores[process_batch_id] : h1s[process_batch_id];
                 }
-                if (m == 0) break; //theoretically not important , can be change to bach
-                if (m > maxs[process_batch_id]) {
-                    maxs[process_batch_id] = m, max_is[process_batch_id] = i, max_js[process_batch_id] = mj;
-                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs(mj - i)? max_offs[process_batch_id] : abs(mj - i);
+                if (ms[process_batch_id] == 0) break; //theoretically not important , can be change to bach
+                if (ms[process_batch_id] > maxs[process_batch_id]) {
+                    maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
+                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
                 } else if (zdrop > 0) {
-                    if (i - max_is[process_batch_id] > mj - max_js[process_batch_id]) {
-                        if (maxs[process_batch_id] - m - ((i - max_is[process_batch_id]) - (mj - max_js[process_batch_id])) * e_del > zdrop) break;
+                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
+                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del > zdrop) break;
                     } else {
-                        if (maxs[process_batch_id] - m - ((mj - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
+                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
                     }
                 }
                 // update beg and end for the next round
@@ -805,7 +824,9 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 //                    end = j + 2 < qlen? j + 2 : qlen;
                 //beg = 0; end = qlen; // uncomment this line for debugging
             }
-            
+        }
+        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+        {
             g_qle[process_batch_id + grid_process_batch_idx*8] = max_js[process_batch_id]+1;
             g_tle[process_batch_id + grid_process_batch_idx*8] = max_is[process_batch_id]+1;
             g_gtle[process_batch_id + grid_process_batch_idx*8] = max_ies[process_batch_id]+1;
