@@ -538,10 +538,13 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         
        // swlen_nxt_id = swlen_batch_id;
         db_hash_nxt_id = db_hash_batch_id;
-        for(int batch_idx=0; batch_idx<BATCHSIZE;batch_idx++)
-            //process 16 query at a time for uint8; process 8 query at a time for uint16 query
+         //process 16 query at a time
+        for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
+        {
+            //process 8 query at a time for int16_t
+            for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
             {
-                
+                int batch_idx = process_batch_id + grid_process_batch_idx*PROCESSBATCH;
                 int qlen = db_hash_nxt_id->qlen;
                 int tlen = db_hash_nxt_id->rlen;//seq->rlen;
                 /************************/
@@ -661,7 +664,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 db_hash_nxt_id++;
                 
             }
-        
+        }
         swlen_nxt_id = swlen_batch_id;
         for(batch_idx=0; batch_idx<next_process; batch_idx++)
         {
