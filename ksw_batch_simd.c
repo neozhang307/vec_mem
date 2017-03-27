@@ -331,8 +331,8 @@ typedef struct {
 #define sortlen(a, b) ((uint32_t)(a) < (uint32_t)(b))
 KSORT_INIT(uint64_t, uint64_t, sortlen)
 
-#define BATCHSIZE 8
-
+#define BATCHSIZE 16
+#define PROCESSBATCH 8
 typedef struct{
     uint32_t qlen;
     uint32_t rlen;
@@ -389,15 +389,16 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             global_batch_id = global_id_x*BATCHSIZE;
             for(int j=0; j<BATCHSIZE; j++)
             {
-                hash_t* cur_rdb = db_hash + i*BATCHSIZE+j;
-                cur_rdb->len = (uint32_t)tptr[j];
-                cur_rdb->alined = aligned_len;
-                cur_rdb->local_id_y = j;
-                cur_rdb->global_batch_id = global_batch_id;
+                hash_t* cur_hash_db = db_hash + i*BATCHSIZE+j;
+                cur_hash_db->len = (uint32_t)tptr[j];
+                cur_hash_db->alined = aligned_len;
+                cur_hash_db->local_id_y = j;
+                cur_hash_db->global_batch_id = global_batch_id;
             }
             global_id_x+=aligned_len;//point to next position
         }
         aligned_len =(uint32_t)swlen[size-1];//must be the last one
+        aligned_len = ((aligned_len+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
         
         uint64_t * tptr =  &swlen_resized[i*BATCHSIZE];
         int j = 0;
@@ -422,9 +423,9 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         global_id_x +=aligned_len;//point to end position
     }
     uint8_t* rdb = malloc(global_id_x*BATCHSIZE);
-    uint8_t* rdb_rv = malloc(global_id_x*BATCHSIZE);
+    uint8_t* rdb_rev = malloc(global_id_x*BATCHSIZE);
     memset(rdb,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
-    memset(rdb_rv,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
+    memset(rdb_rev,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
     //copy reference to db
     
     /***********************/
@@ -441,6 +442,32 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         
         memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
     }
+    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
+    {
+        hash_t* rdb_hash_t = &db_hash[gride_batch_id*BATCHSIZE];
+        uint8_t* db_ptr = rdb + rdb_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr = rdb_rev + rdb_hash_t->global_batch_id;
+        int x = BATCHSIZE;
+        int y = rdb_hash_t->alined;
+        transpose_8(db_ptr, db_rev_ptr, x, y);
+    }
+    //test
+#ifdef DEBUG
+    {
+        hash_t* rdb_hash_t = &db_hash[1*BATCHSIZE];
+        uint8_t* db_ptr = rdb + rdb_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr = rdb_rev + rdb_hash_t->global_batch_id;
+        int size_x = BATCHSIZE;
+        int size_y = rdb_hash_t->alined;
+        for(int id_x=0; id_x<size_x; id_x++)
+        {
+            for(int id_y=0; id_y<size_y; id_y++)
+            {
+                assert(db_ptr[id_x*size_y+id_y]==db_rev_ptr[id_x+size_x*id_y]);
+            }
+        }
+    }
+#endif
     /***********************/
     //generate profile
     //qprofile should be aligned to 256bit (16x16)|(8X32)
@@ -469,8 +496,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     int zdrop = g_zdrop;
     const int8_t *mat = g_mat[0];
     int m = g_m;
-    
-    
     
     
     uint64_t* swlen_batch_id = swlen_resized;//resize
@@ -509,11 +534,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
             g_h0[batch_idx] = sw->h0;
             swlen_nxt_id++;
-            //assert(sw->sw_seq->qlen>0);
-            //if(swlen_nxt_id==swlen_end)break;
-            //assert(i*BATCHSIZE+j<resize);
         }
-        
         
        // swlen_nxt_id = swlen_batch_id;
         db_hash_nxt_id = db_hash_batch_id;
@@ -524,9 +545,13 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 int qlen = db_hash_nxt_id->qlen;
                 int tlen = db_hash_nxt_id->rlen;//seq->rlen;
                 /************************/
-                size_t seed_global_id = db_hash_nxt_id->global_batch_id+db_hash_nxt_id->local_id_y*db_hash_nxt_id->alined;
+                size_t batch_global_id =  db_hash_nxt_id->global_batch_id;
+               // int alignLen = db_hash_nxt_id->alined;
+                
+                size_t seed_global_id = db_hash_nxt_id->global_batch_id+batch_idx*db_hash_nxt_id->alined;
                 /***********************/
-                const uint8_t *target =  rdb+seed_global_id;//seq->ref;
+                //const uint8_t *target_batch =  rdb+batch_global_id;//seq->ref; //BATCHSIZE * alignLen;
+                const uint8_t *target_rev_batch =  rdb_rev+batch_global_id;//seq->ref; //alignLen * BATCHSIZE
                 /***********************/
                 int8_t *qp = qp_db+g_m*(seed_global_id);//malloc(qlen * m);
                 int ali_len = db_hash_nxt_id->alined;
@@ -554,12 +579,13 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 beg = 0, end = qlen;
                
                 //MAIN SW
-                //for (i = 0; LIKELY(i < tlen); ++i) {
                 for (i = 0; LIKELY(i < ali_len); ++i) {
                     int t, f = 0, h1, m = 0, mj = -1;
                     
                     /***********************/
-                    int8_t *q = &qp[target[i] * qlen];
+                    uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
+                    int8_t *q = &qp[nxt_target * qlen];
+                    
                     /***********************/
                     
                     // apply the band and the constraint (if provided)
@@ -624,9 +650,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
                 
                 //finalize
                 free(eh); //free(qp);
-
-                //post process
-                //result
             
                 g_qle[batch_idx] = max_j+1;
                 g_tle[batch_idx] = max_i+1;
@@ -657,6 +680,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     
     free(qp_db);
     free(rdb);
+    free(rdb_rev);
     free(swlen);
     free(db_hash);
 }
@@ -830,8 +854,9 @@ int main()
     //time
     double ctime = cputime();
     double rtime = realtime();
-    fprintf(stderr,"now try %ld\n",nread-7);
-    ksw_extend_batch2(nsrt, nread-7);
+    size_t process_sze = nread;
+    fprintf(stderr,"now try %ld\n",process_sze);
+    ksw_extend_batch2(nsrt, process_sze);
     
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
@@ -840,7 +865,7 @@ int main()
     size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
     assert(rread==nread);
     //printf("the result is %d\n", cmp(nsrt,rsrt,nread));
-    uint8_t check = printdif(nsrt,rsrt,nread-7);
+    uint8_t check = printdif(nsrt,rsrt,process_sze);
     if(check==0)
     {
         fprintf(stderr,"the check result is correct\n");
