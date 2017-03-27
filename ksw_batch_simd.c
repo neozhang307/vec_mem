@@ -343,6 +343,7 @@ typedef struct{
 }hash_t;
 #define CHECK do{fprintf(stderr,"successfully process to line %d\n",__LINE__);}while(0)
 
+
 void batch_sw_core(hash_t* db_hash_batch_id,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
@@ -401,7 +402,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             // DP loop
             max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
             max_off = 0;
-            beg = 0, end = qlen;
+            beg = 0, end = qlen;//every seqs in a batch should have save qlen
             
             //MAIN SW
             for (i = 0; LIKELY(i < ali_len); ++i) {
@@ -409,7 +410,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 
                 /***********************/
                 uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
-                int16_t *q = &qp[nxt_target * qlen];
+                int16_t *q = &qp[nxt_target * ali_len];
                 
                 /***********************/
                 
@@ -577,6 +578,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     /***********************/
     //reference should be reverse
     //swlen_resize size is resize
+    //construct RDB;
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
@@ -624,15 +626,20 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
         swseq_t *seq = sw->sw_seq;
         hash_t* rdb_hash_t = &db_hash[i];
-        int qlen =seq->qlen;
+        
         rdb_hash_t->qlen=seq->qlen;
+        int qlen =seq->qlen;
+        int aligned = rdb_hash_t->alined;
         int16_t* qp = qp_db+g_m*(rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined);
         const uint8_t* query =seq->query;
         for (int k = 0, m = 0; k < g_m; ++k) {
             const int8_t *p = g_mat[k];
-            for (int j = 0; j < qlen; ++j) qp[m++] = p[query[j]];
+            int j = 0;
+            for (; j < qlen; ++j) qp[m++] = p[query[j]];
+            for(;j<aligned; ++j) qp[m++]=p[5];
         }
     }
+    /************************/
   //  for(int i=ptr; i<size;++i)
     
     int o_del = g_o_del;
