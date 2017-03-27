@@ -16,7 +16,7 @@
 #define BATCHSIZE 8
 #include<assert.h>
 #define SHUFFLE(z, y, x, w) (w<<6) | (x<<4) | (y<<2) | z
-inline void transpose_8x8_hwords (__m128i w0, __m128i w1,
+void transpose_8x8_hwords (__m128i w0, __m128i w1,
                                   __m128i w2, __m128i w3,
                                   __m128i w4, __m128i w5,
                                   __m128i w6, __m128i w7,
@@ -56,7 +56,7 @@ inline void transpose_8x8_hwords (__m128i w0, __m128i w1,
     *r7 = _mm_shuffle_ps(__tt3, __tt7, _MM_SHUFFLE( 3, 1, 3, 1));
 }
 
-inline void transpose_16x16_hwords (__m128i w0, __m128i w1,
+void transpose_16x16_hwords (__m128i w0, __m128i w1,
                                     __m128i w2, __m128i w3,
                                     __m128i w4, __m128i w5,
                                     __m128i w6, __m128i w7,

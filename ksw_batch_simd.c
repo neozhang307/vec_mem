@@ -708,7 +708,17 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             tlens[process_batch_id]=tmphash->rlen;
             maxtlen=maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
         }
-        
+        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+        {
+            int batch_idx = process_batch_id + grid_process_batch_idx*8;
+            h0s[process_batch_id]=g_h0[batch_idx];
+            maxs[process_batch_id]=h0s[process_batch_id];
+            max_is[process_batch_id]=-1;
+            max_js[process_batch_id]=-1;
+            max_ies[process_batch_id]=-1;
+            gscores[process_batch_id]=-1;
+            max_offs[process_batch_id]=0;
+        }
         
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
         {
@@ -723,8 +733,8 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             // query profile
             int16_t i, j;
             int16_t beg, end;
-            int16_t max, max_i, max_j, max_ie, gscore, max_off;
-            int16_t h0=g_h0[batch_idx];
+            
+            int16_t h0=h0s[process_batch_id];
             assert(h0 >= 0);
             // allocate memory
             beg = 0, end = qlen;//every seqs in a batch should have same qlen
@@ -734,8 +744,18 @@ void batch_sw_core(hash_t* db_hash_batch_id,
 
             // adjust $w if it is too large
             // DP loop
-            max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
-            max_off = 0;
+//            int16_t max;
+        //    int16_t max_i;
+          //  int16_t max_j;
+      //      int16_t max_ie;
+        //    int16_t gscore;
+         //   int16_t max_off;
+       //     max = maxs[process_batch_id];
+        //    max_i = max_is[process_batch_id];
+         //   max_j = max_js[process_batch_id];
+        //    max_ie = max_ies[process_batch_id];
+       //     gscore = gscores[process_batch_id];
+          //  max_off = max_offs[process_batch_id];
             
             
             //MAIN SW
@@ -748,9 +768,9 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 
                 /***********************/
                 {
-                    for(int i=0; i<qlen; i++)
+                    for(int i=0; i<align_end; i++)
                     {
-                        qp_buff[i] = q[i];
+                        qp_buff[i] = qp[nxt_target*align_end+i];
                     }
                 }
                 // compute the first column
@@ -795,18 +815,18 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 h1=i<tlen?h1:0;
                 ehs[end][process_batch_id].h = h1; ehs[end][process_batch_id].e = 0;
                 if (j == qlen) {
-                    max_ie = gscore > h1? max_ie : i;
-                    gscore = gscore > h1? gscore : h1;
+                    max_ies[process_batch_id] = gscores[process_batch_id] > h1? max_ies[process_batch_id] : i;
+                    gscores[process_batch_id] = gscores[process_batch_id] > h1? gscores[process_batch_id] : h1;
                 }
                 if (m == 0) break; //theoretically not important , can be change to bach
-                if (m > max) {
-                    max = m, max_i = i, max_j = mj;
-                    max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
+                if (m > maxs[process_batch_id]) {
+                    maxs[process_batch_id] = m, max_is[process_batch_id] = i, max_js[process_batch_id] = mj;
+                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs(mj - i)? max_offs[process_batch_id] : abs(mj - i);
                 } else if (zdrop > 0) {
-                    if (i - max_i > mj - max_j) {
-                        if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                    if (i - max_is[process_batch_id] > mj - max_js[process_batch_id]) {
+                        if (maxs[process_batch_id] - m - ((i - max_is[process_batch_id]) - (mj - max_js[process_batch_id])) * e_del > zdrop) break;
                     } else {
-                        if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                        if (maxs[process_batch_id] - m - ((mj - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
                     }
                 }
                 // update beg and end for the next round
@@ -817,12 +837,12 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 //beg = 0; end = qlen; // uncomment this line for debugging
             }
             
-            g_qle[batch_idx] = max_j+1;
-            g_tle[batch_idx] = max_i+1;
-            g_gtle[batch_idx] = max_ie+1;
-            g_gscore[batch_idx] = gscore;
-            g_max_off[batch_idx] = max_off;
-            g_score[batch_idx] = max;
+            g_qle[batch_idx] = max_js[process_batch_id]+1;
+            g_tle[batch_idx] = max_is[process_batch_id]+1;
+            g_gtle[batch_idx] = max_ies[process_batch_id]+1;
+            g_gscore[batch_idx] = gscores[process_batch_id];
+            g_max_off[batch_idx] = max_offs[process_batch_id];
+            g_score[batch_idx] = maxs[process_batch_id];
             //db_hash_nxt_id++;
             
         }
