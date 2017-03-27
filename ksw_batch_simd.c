@@ -343,7 +343,7 @@ typedef struct{
 }hash_t;
 #define CHECK do{fprintf(stderr,"successfully process to line %d\n",__LINE__);}while(0)
 static int one=0;
-void batch_sw_core(hash_t* db_hash_batch_id,
+void batch_sw_core2(hash_t* db_hash_batch_id,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
@@ -372,9 +372,15 @@ void batch_sw_core(hash_t* db_hash_batch_id,
 (xx) = _mm_max_epi16((xx), _mm_srli_si128((xx), 2)); \
 (ret) = _mm_extract_epi16((xx), 0); \
 } while (0)
+#define __min_8(ret, xx) do { \
+(xx) = _mm_min_epi16((xx), _mm_srli_si128((xx), 8)); \
+(xx) = _mm_min_epi16((xx), _mm_srli_si128((xx), 4)); \
+(xx) = _mm_min_epi16((xx), _mm_srli_si128((xx), 2)); \
+(ret) = _mm_extract_epi16((xx), 0); \
+} while (0)
     __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins;
     
-    v_zero = _mm_set1_epi32(0);
+    v_zero = _mm_setzero_pd();
     v_oe_del = _mm_set1_epi16(o_del + e_del);
     v_e_del = _mm_set1_epi16(e_del);
     v_oe_ins = _mm_set1_epi16(o_ins + e_ins);
@@ -386,6 +392,12 @@ void batch_sw_core(hash_t* db_hash_batch_id,
     __m128i v_tlen, v_qlen;
     __m128i v_beg, v_end, v_align_end;
     hash_t*  db_hash_nxt_id = db_hash_batch_id;
+    
+    __m128i v_max, v_max_i, v_max_j, v_max_ie, v_gscore;
+    __m128i v_max_off;
+    __m128i v_H0, v_H1;
+  //  max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
+  //  max_off = 0;
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
         //process 8 query at a time for int16_t
@@ -399,9 +411,20 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         }
         v_qlen = _mm_load_si128((__m128i*)p_qlen);//theoretically not necessary
         v_tlen = _mm_load_si128((__m128i*)p_tlen);
-        v_beg=_mm_set1_epi32(0);
+        v_beg=_mm_setzero_pd();
         v_end = _mm_load_si128((__m128i*)p_qlen);
         v_align_end = _mm_set1_epi16(ali_len);
+        
+        __m128i v_qp[PROCESSBATCH];//8X8
+        int16_t *qp = qp_db+g_m*(db_hash_nxt_id[0].global_batch_id+(0 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+//        int16_t *qp1 = qp_db+g_m*(db_hash_nxt_id[1].global_batch_id+(1 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+//        int16_t *qp2 = qp_db+g_m*(db_hash_nxt_id[2].global_batch_id+(2 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+//        int16_t *qp3 = qp_db+g_m*(db_hash_nxt_id[3].global_batch_id+(3 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+//        int16_t *qp4 = qp_db+g_m*(db_hash_nxt_id[4].global_batch_id+(4 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+//        int16_t *qp5 = qp_db+g_m*(db_hash_nxt_id[5].global_batch_id+(5 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+//        int16_t *qp6 = qp_db+g_m*(db_hash_nxt_id[6].global_batch_id+(6 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+//        int16_t *qp7 = qp_db+g_m*(db_hash_nxt_id[7].global_batch_id+(7 + grid_process_batch_idx*PROCESSBATCH)*ali_len);
+        const uint8_t *target_rev_batch =  rdb_rev+db_hash_nxt_id[0].global_batch_id;
         
         __m128i *H,*E;
         //q0 q1 q2 q3 q4 q5 q6 q7
@@ -409,16 +432,63 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         //...
         // count = ali_len+1
         H = (__m128i*)malloc(sizeof(__m128i)*(ali_len + 1));
+        memset(H,0,sizeof(__m128i)*(ali_len + 1));
         E = (__m128i*)malloc(sizeof(__m128i)*(ali_len + 1));
-        H[0] = _mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
+        memset(E,0,sizeof(__m128i)*(ali_len + 1));
+        v_H0 = _mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
+        H[0]=v_H0;
         H[1] = _mm_subs_epu16(H[0],v_oe_ins);
         for(int itr_j = 2; itr_j<=ali_len; itr_j++)
         {
             H[itr_j]=_mm_subs_epu16(H[itr_j-1],v_e_ins);
         }
         
-        
-        
+        v_max = v_H0;
+        v_gscore = _mm_set1_epi16(-1);
+        v_max_ie = _mm_set1_epi16(-1);
+        v_max_i=_mm_set1_epi16(-1);
+        v_max_j=_mm_set1_epi16(-1);
+        v_max_off = _mm_setzero_pd();
+        int i_end;
+        __max_8(i_end, v_tlen);
+        for (int i = 0; LIKELY(i < i_end); ++i) {//tlen
+//            int t, f = 0, h1, m = 0, mj = -1;
+//            int h_l=0, m_l=0, mj_l=0;
+            __m128i v_t, v_f, v_m, v_mj, v_h_l, v_m_l, v_mj_l;
+            
+            //init qprofile
+            const uint8_t *nxt_target = target_rev_batch+i*BATCHSIZE+grid_process_batch_idx*PROCESSBATCH;
+            uint8_t v_target[8];
+            memcpy(v_target,nxt_target,8);
+            
+            
+            v_f = _mm_setzero_pd();
+            v_m = _mm_setzero_pd();
+            v_mj = _mm_set1_epi16(-1);
+            v_h_l = _mm_setzero_pd();
+            v_m_l = _mm_setzero_pd();
+            v_mj_l = _mm_setzero_pd();
+            //            if (beg == 0) {
+            //                h1 = h0 - (o_del + e_del * (i + 1));
+            //                if (h1 < 0) h1 = 0;
+            //            } else h1 = 0;
+            __m128i cmp =_mm_cmpeq_epi16(v_beg, v_zero);
+            
+            __m128i tmp =_mm_set1_epi16(o_del+e_del*(i+1));
+            v_H1 = _mm_subs_epu16(v_H0,tmp);//if (beg == 0) {h1 = h0 - (o_del + e_del * (i + 1));
+            v_H1 = _mm_and_si128(v_H1, cmp);//} else h1 = 0;
+//            for (j = beg; LIKELY(j < align_end); ++j) {
+            int j_beg, j_end;
+            __min_8(j_beg,v_beg);
+            __max_8(j_end,v_end);
+            for(int j=j_beg; j<j_end; j++)//end
+            {
+               
+                
+            }
+            
+            break;
+        }
         for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
         {
             int batch_idx = process_batch_id + grid_process_batch_idx*PROCESSBATCH;
@@ -454,29 +524,26 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
             for (j = 2; j <= align_end && eh[j-1].h > e_ins; ++j)
                 eh[j].h = eh[j-1].h - e_ins;
-            
+#ifdef DEBUG
             for(int i=0; i<ali_len; i++)
             {
                 //fprintf(stderr,"%d:%d \t",eh[i].h,((int16_t*)H)[process_batch_id+i*PROCESSBATCH]);
                 assert(eh[i].h==((int16_t*)H)[process_batch_id+i*PROCESSBATCH]);
             }
-           // fprintf(stderr,"\n");
+#endif
+            // fprintf(stderr,"\n");
             
             // adjust $w if it is too large
             // DP loop
             max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
             max_off = 0;
-            
             //MAIN SW
-            for (i = 0; LIKELY(i < ali_len); ++i) {
+            for (i = 0; LIKELY(i < ali_len); ++i) {//tlen
                 int t, f = 0, h1, m = 0, mj = -1;
                 int h_l=0, m_l=0, mj_l=0;
-                /***********************/
                 uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
                 int16_t *q = &qp[nxt_target * ali_len];
-                
-                /***********************/
-                
+                ////////////////////////
                 // apply the band and the constraint (if provided)
                 //        if (beg < i - w) beg = i - w;
                 //        if (end > i + w + 1) end = i + w + 1;
@@ -486,8 +553,16 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     h1 = h0 - (o_del + e_del * (i + 1));
                     if (h1 < 0) h1 = 0;
                 } else h1 = 0;
+#ifdef DEBUG
+                if(i==0)
+                {
+                    uint16_t a[8];
+                    _mm_store_si128((__m128i*)a,v_H1);
+                    assert(h1==a[process_batch_id]);
+                }
+#endif
                 //processing a row
-                for (j = beg; LIKELY(j < align_end); ++j) {
+                for (j = beg; LIKELY(j < align_end); ++j) {//end
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
                     // Similar to SSE2-SW, cells are computed in the following order:
                     //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
@@ -497,6 +572,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
                     p->h = h1;          // set H(i,j-1) for the next row
                     M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
+                    /////////
                     h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
                     h = h > f? h : f;
                     h1 = h;             // save H(i,j) to h1 for the next column
@@ -561,7 +637,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
 }
 
 
-void batch_sw_core2(hash_t* db_hash_batch_id,
+void batch_sw_core(hash_t* db_hash_batch_id,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
@@ -582,42 +658,86 @@ void batch_sw_core2(hash_t* db_hash_batch_id,
 {
     
     hash_t*  db_hash_nxt_id = db_hash_batch_id;
+    int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
+    int align_end = db_hash_nxt_id->alined;
+    size_t batch_global_id =  db_hash_nxt_id->global_batch_id;
+
+    
+    int16_t* qp_buff = malloc(sizeof(int16_t)*PROCESSBATCH*align_end);
+    memset(qp_buff,0,sizeof(int16_t)*PROCESSBATCH*align_end);
+    
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
+        const uint8_t *target_rev_batch =  rdb_rev+batch_global_id;
+        const int16_t *qp_batch = qp_db +g_m*batch_global_id;
+        const int16_t *qp_batch_nxt = qp_batch + g_m*grid_process_batch_idx*8*align_end;
         //process 8 query at a time for int16_t
-        for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
+        uint16_t qlens[8];
+        uint16_t maxqlen=0;
+        uint16_t tlens[8];
+        uint16_t maxtlen=0;
+        
+        
+        
+        eh_m **ehs=malloc(sizeof(eh_m*)*(align_end + 1));
+        for(int i=0; i<align_end+1;i++)
         {
-            int batch_idx = process_batch_id + grid_process_batch_idx*PROCESSBATCH;
-            int qlen = db_hash_nxt_id->qlen;
-            int tlen = db_hash_nxt_id->rlen;//seq->rlen;
-            /************************/
-            size_t batch_global_id =  db_hash_nxt_id->global_batch_id;
-            // int alignLen = db_hash_nxt_id->alined;
+            ehs[i]=malloc(sizeof(eh_m)*8);
+        }
+        int16_t begs[8], ends[8];
+        int16_t maxs[8], max_is[8], max_js[8], max_ies[8], gscores[9], max_offs[8];
+        int16_t h0s[8];
+        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+        {
+            h0s[process_batch_id]=g_h0[process_batch_id+grid_process_batch_idx*8];
+        }
+        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+        {
+            ehs[0][process_batch_id].h=h0s[process_batch_id];
+            ehs[1][process_batch_id].h=h0s[process_batch_id]>oe_ins?h0s[process_batch_id]-oe_ins:0;
+            for (int j = 2; j <= align_end && ehs[j-1][process_batch_id].h > e_ins; ++j)
+                ehs[j][process_batch_id].h = ehs[j-1][process_batch_id].h - e_ins;
+        }
+        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+        {
+            hash_t *tmphash =db_hash_nxt_id+process_batch_id+grid_process_batch_idx*8;
             
-            size_t seed_global_id = db_hash_nxt_id->global_batch_id+batch_idx*db_hash_nxt_id->alined;
-            /***********************/
-            //const uint8_t *target_batch =  rdb+batch_global_id;//seq->ref; //BATCHSIZE * alignLen;
-            const uint8_t *target_rev_batch =  rdb_rev+batch_global_id;//seq->ref; //alignLen * BATCHSIZE
-            /***********************/
-            int16_t *qp = qp_db+g_m*(seed_global_id);//malloc(qlen * m);
-            int ali_len = db_hash_nxt_id->alined;
+            qlens[process_batch_id]=tmphash->qlen;
+            maxqlen=maxqlen>tmphash->qlen?maxqlen:tmphash->qlen;
             
+            tlens[process_batch_id]=tmphash->rlen;
+            maxtlen=maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
+        }
+        
+        
+        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+        {
+            hash_t * db_hash_nxt_id=db_hash_batch_id+process_batch_id+grid_process_batch_idx*8;
+            int batch_idx = process_batch_id + grid_process_batch_idx*8;
+            uint16_t qlen = qlens[process_batch_id];//db_hash_nxt_id->qlen;
+            uint16_t tlen = tlens[process_batch_id];//db_hash_nxt_id->rlen;//seq->rlen;
+            /***********************/
+            const int16_t *qp = qp_batch_nxt;//+g_m*((process_batch_id )*align_end);//malloc(qlen * m);
+            qp_batch_nxt=qp_batch_nxt+g_m*align_end;
             eh_m *eh; // score array
             // query profile
-            int16_t i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
-            int16_t beg, end, align_end;
+            int16_t i, j;
+            int16_t beg, end;
             int16_t max, max_i, max_j, max_ie, gscore, max_off;
             int16_t h0=g_h0[batch_idx];
             assert(h0 >= 0);
             // allocate memory
-            align_end = ali_len;
             beg = 0, end = qlen;//every seqs in a batch should have same qlen
             eh = calloc(align_end + 1, 8);
             
             // fill the first row
-            eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
-            for (j = 2; j <= align_end && eh[j-1].h > e_ins; ++j)
-                eh[j].h = eh[j-1].h - e_ins;
+            eh[0].h=ehs[0][process_batch_id].h;
+            eh[1].h=ehs[1][process_batch_id].h;
+            for(int i=2; i<align_end+1&&eh[i-1].h > e_ins; i++)
+            {
+                eh[i].h=ehs[i][process_batch_id].h;
+            }
+
             // adjust $w if it is too large
             // DP loop
             max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
@@ -625,15 +745,20 @@ void batch_sw_core2(hash_t* db_hash_batch_id,
             
             
             //MAIN SW
-            for (i = 0; LIKELY(i < ali_len); ++i) {
+            for (i = 0; LIKELY(i < tlen); ++i) {
                 int t, f = 0, h1, m = 0, mj = -1;
                 int h_l=0, m_l=0, mj_l=0;
                 /***********************/
                 uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
-                int16_t *q = &qp[nxt_target * ali_len];
+                const  int16_t *q = &qp[nxt_target * align_end];
                 
                 /***********************/
-                
+                {
+                    for(int i=0; i<qlen; i++)
+                    {
+                        qp_buff[i] = q[i];
+                    }
+                }
                 // apply the band and the constraint (if provided)
                 //        if (beg < i - w) beg = i - w;
                 //        if (end > i + w + 1) end = i + w + 1;
@@ -644,7 +769,7 @@ void batch_sw_core2(hash_t* db_hash_batch_id,
                     if (h1 < 0) h1 = 0;
                 } else h1 = 0;
                 //processing a row
-                for (j = beg; LIKELY(j < align_end); ++j) {
+                for (j = beg; LIKELY(j < end); ++j) {
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
                     // Similar to SSE2-SW, cells are computed in the following order:
                     //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
@@ -711,9 +836,10 @@ void batch_sw_core2(hash_t* db_hash_batch_id,
             g_gscore[batch_idx] = gscore;
             g_max_off[batch_idx] = max_off;
             g_score[batch_idx] = max;
-            db_hash_nxt_id++;
+            //db_hash_nxt_id++;
             
         }
+        free(ehs);
     }
 }
 /**************/
