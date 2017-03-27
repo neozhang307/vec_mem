@@ -682,7 +682,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         eh_m **ehs=malloc(sizeof(eh_m*)*(align_end + 1));
         for(int i=0; i<align_end+1;i++)
         {
-            ehs[i]=malloc(sizeof(eh_m)*8);
+            ehs[i]=calloc(sizeof(eh_m)*8,1);
         }
         int16_t begs[8], ends[8];
         int16_t maxs[8], max_is[8], max_js[8], max_ies[8], gscores[9], max_offs[8];
@@ -719,7 +719,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             /***********************/
             const int16_t *qp = qp_batch_nxt;//+g_m*((process_batch_id )*align_end);//malloc(qlen * m);
             qp_batch_nxt=qp_batch_nxt+g_m*align_end;
-            eh_m *eh; // score array
+            //eh_m *eh; // score array
             // query profile
             int16_t i, j;
             int16_t beg, end;
@@ -728,15 +728,9 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             assert(h0 >= 0);
             // allocate memory
             beg = 0, end = qlen;//every seqs in a batch should have same qlen
-            eh = calloc(align_end + 1, 8);
+            
             
             // fill the first row
-            eh[0].h=ehs[0][process_batch_id].h;
-            eh[1].h=ehs[1][process_batch_id].h;
-            for(int i=2; i<align_end+1&&eh[i-1].h > e_ins; i++)
-            {
-                eh[i].h=ehs[i][process_batch_id].h;
-            }
 
             // adjust $w if it is too large
             // DP loop
@@ -759,10 +753,6 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                         qp_buff[i] = q[i];
                     }
                 }
-                // apply the band and the constraint (if provided)
-                //        if (beg < i - w) beg = i - w;
-                //        if (end > i + w + 1) end = i + w + 1;
-                //        if (end > qlen) end = qlen;
                 // compute the first column
                 if (beg == 0) {
                     h1 = h0 - (o_del + e_del * (i + 1));
@@ -775,9 +765,9 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
                     //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
                     //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
-                    eh_m *p = &eh[j];
-                    int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
-                    p->h = h1;          // set H(i,j-1) for the next row
+
+                    int h, M = ehs[j][process_batch_id].h, e = ehs[j][process_batch_id].e; // get H(i-1,j-1) and E(i-1,j)
+                    ehs[j][process_batch_id].h = h1;          // set H(i,j-1) for the next row
                     M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
                     h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
                     h = h > f? h : f;
@@ -788,7 +778,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     t = t > 0? t : 0;
                     e -= e_del;
                     e = e > t? e : t;   // computed E(i+1,j)
-                    p->e = e;           // save E(i+1,j) for the next row
+                    ehs[j][process_batch_id].e = e;           // save E(i+1,j) for the next row
                     t = M - oe_ins;
                     t = t > 0? t : 0;
                     f -= e_ins;
@@ -803,7 +793,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 m=m_l;
                 mj=mj_l;
                 h1=i<tlen?h1:0;
-                eh[end].h = h1; eh[end].e = 0;
+                ehs[end][process_batch_id].h = h1; ehs[end][process_batch_id].e = 0;
                 if (j == qlen) {
                     max_ie = gscore > h1? max_ie : i;
                     gscore = gscore > h1? gscore : h1;
@@ -826,9 +816,6 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 //                    end = j + 2 < qlen? j + 2 : qlen;
                 //beg = 0; end = qlen; // uncomment this line for debugging
             }
-            
-            //finalize
-            free(eh); //free(qp);
             
             g_qle[batch_idx] = max_j+1;
             g_tle[batch_idx] = max_i+1;
