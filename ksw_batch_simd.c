@@ -342,6 +342,153 @@ typedef struct{
     uint8_t local_id_y;//idx inside batch
 }hash_t;
 #define CHECK do{fprintf(stderr,"successfully process to line %d\n",__LINE__);}while(0)
+
+void batch_sw_core(hash_t* db_hash_batch_id,
+                   uint8_t* rdb_rev,
+                   int16_t* qp_db,
+                   int16_t g_h0[BATCHSIZE],//input
+                   int o_del,
+                   int e_del,
+                   int o_ins,
+                   int e_ins,
+                   int zdrop,
+                   
+                   int16_t g_qle[BATCHSIZE],//result
+                   int16_t g_tle[BATCHSIZE],
+                   int16_t g_gtle[BATCHSIZE],
+                   int16_t g_gscore[BATCHSIZE],
+                   int16_t g_max_off[BATCHSIZE],
+                   int16_t g_score[BATCHSIZE]
+                   
+                   )
+{
+    
+    hash_t*  db_hash_nxt_id = db_hash_batch_id;
+    for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
+    {
+        //process 8 query at a time for int16_t
+        for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
+        {
+            int batch_idx = process_batch_id + grid_process_batch_idx*PROCESSBATCH;
+            int qlen = db_hash_nxt_id->qlen;
+            int tlen = db_hash_nxt_id->rlen;//seq->rlen;
+            /************************/
+            size_t batch_global_id =  db_hash_nxt_id->global_batch_id;
+            // int alignLen = db_hash_nxt_id->alined;
+            
+            size_t seed_global_id = db_hash_nxt_id->global_batch_id+batch_idx*db_hash_nxt_id->alined;
+            /***********************/
+            //const uint8_t *target_batch =  rdb+batch_global_id;//seq->ref; //BATCHSIZE * alignLen;
+            const uint8_t *target_rev_batch =  rdb_rev+batch_global_id;//seq->ref; //alignLen * BATCHSIZE
+            /***********************/
+            int16_t *qp = qp_db+g_m*(seed_global_id);//malloc(qlen * m);
+            int ali_len = db_hash_nxt_id->alined;
+            
+            eh_m *eh; // score array
+            // query profile
+            int16_t i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end;
+            int16_t max, max_i, max_j, max_ie, gscore, max_off;
+            int16_t h0=g_h0[batch_idx];
+            assert(h0 >= 0);
+            // allocate memory
+            eh = calloc(qlen + 1, 8);
+            
+            // fill the first row
+            eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
+            for (j = 2; j <= qlen && eh[j-1].h > e_ins; ++j)
+                eh[j].h = eh[j-1].h - e_ins;
+            // adjust $w if it is too large
+            // DP loop
+            max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
+            max_off = 0;
+            beg = 0, end = qlen;
+            
+            //MAIN SW
+            for (i = 0; LIKELY(i < ali_len); ++i) {
+                int t, f = 0, h1, m = 0, mj = -1;
+                
+                /***********************/
+                uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
+                int16_t *q = &qp[nxt_target * qlen];
+                
+                /***********************/
+                
+                // apply the band and the constraint (if provided)
+                //        if (beg < i - w) beg = i - w;
+                //        if (end > i + w + 1) end = i + w + 1;
+                //        if (end > qlen) end = qlen;
+                // compute the first column
+                if (beg == 0) {
+                    h1 = h0 - (o_del + e_del * (i + 1));
+                    if (h1 < 0) h1 = 0;
+                } else h1 = 0;
+                //processing a row
+                for (j = beg; LIKELY(j < end); ++j) {
+                    // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
+                    // Similar to SSE2-SW, cells are computed in the following order:
+                    //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
+                    //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
+                    //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
+                    eh_m *p = &eh[j];
+                    int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
+                    p->h = h1;          // set H(i,j-1) for the next row
+                    M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
+                    h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
+                    h = h > f? h : f;
+                    h1 = h;             // save H(i,j) to h1 for the next column
+                    mj = m > h? mj : j; // record the position where max score is achieved
+                    m = m > h? m : h;   // m is stored at eh[mj+1]
+                    t = M - oe_del;
+                    t = t > 0? t : 0;
+                    e -= e_del;
+                    e = e > t? e : t;   // computed E(i+1,j)
+                    p->e = e;           // save E(i+1,j) for the next row
+                    t = M - oe_ins;
+                    t = t > 0? t : 0;
+                    f -= e_ins;
+                    f = f > t? f : t;   // computed F(i,j+1)
+                }
+                h1=i<tlen?h1:0;
+                eh[end].h = h1; eh[end].e = 0;
+                if (j == qlen) {
+                    max_ie = gscore > h1? max_ie : i;
+                    gscore = gscore > h1? gscore : h1;
+                }
+                if (m == 0) break; //theoretically not important , can be change to bach
+                if (m > max) {
+                    max = m, max_i = i, max_j = mj;
+                    max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
+                } else if (zdrop > 0) {
+                    if (i - max_i > mj - max_j) {
+                        if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                    } else {
+                        if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                    }
+                }
+                // update beg and end for the next round
+                //                    for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
+                //                    beg = j;
+                //                    for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
+                //                    end = j + 2 < qlen? j + 2 : qlen;
+                //beg = 0; end = qlen; // uncomment this line for debugging
+            }
+            
+            //finalize
+            free(eh); //free(qp);
+            
+            g_qle[batch_idx] = max_j+1;
+            g_tle[batch_idx] = max_i+1;
+            g_gtle[batch_idx] = max_ie+1;
+            g_gscore[batch_idx] = gscore;
+            g_max_off[batch_idx] = max_off;
+            g_score[batch_idx] = max;
+            //swlen_nxt_id++;
+            db_hash_nxt_id++;
+            
+        }
+    }
+}
+/**************/
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 {
     //sort
@@ -376,7 +523,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     int global_id_x = 0;
     //break a loop, which is easy to program
     {
-        
         int aligned_len = 0;
         int global_batch_id =0;
         int i=0;//i is batch id x;
@@ -535,136 +681,25 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             g_h0[batch_idx] = sw->h0;
             swlen_nxt_id++;
         }
-        
-       // swlen_nxt_id = swlen_batch_id;
-        db_hash_nxt_id = db_hash_batch_id;
-         //process 16 query at a time
-        for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
-        {
-            //process 8 query at a time for int16_t
-            for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
-            {
-                int batch_idx = process_batch_id + grid_process_batch_idx*PROCESSBATCH;
-                int qlen = db_hash_nxt_id->qlen;
-                int tlen = db_hash_nxt_id->rlen;//seq->rlen;
-                /************************/
-                size_t batch_global_id =  db_hash_nxt_id->global_batch_id;
-               // int alignLen = db_hash_nxt_id->alined;
-                
-                size_t seed_global_id = db_hash_nxt_id->global_batch_id+batch_idx*db_hash_nxt_id->alined;
-                /***********************/
-                //const uint8_t *target_batch =  rdb+batch_global_id;//seq->ref; //BATCHSIZE * alignLen;
-                const uint8_t *target_rev_batch =  rdb_rev+batch_global_id;//seq->ref; //alignLen * BATCHSIZE
-                /***********************/
-                int16_t *qp = qp_db+g_m*(seed_global_id);//malloc(qlen * m);
-                int ali_len = db_hash_nxt_id->alined;
-                
-                eh_m *eh; // score array
-                 // query profile
-                int16_t i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end;
-                int16_t max, max_i, max_j, max_ie, gscore, max_off;
-                int16_t h0=g_h0[batch_idx];
-                assert(h0 >= 0);
-                // allocate memory
-                eh = calloc(qlen + 1, 8);
-                
-                // fill the first row
-                eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
-                for (j = 2; j <= qlen && eh[j-1].h > e_ins; ++j)
-                    eh[j].h = eh[j-1].h - e_ins;
-                // adjust $w if it is too large
-                k = m * m;
-                for (i = 0, max = 0; i < k; ++i) // get the max score
-                    max = max > mat[i]? max : mat[i];
-                // DP loop
-                max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
-                max_off = 0;
-                beg = 0, end = qlen;
-               
-                //MAIN SW
-                for (i = 0; LIKELY(i < ali_len); ++i) {
-                    int t, f = 0, h1, m = 0, mj = -1;
-                    
-                    /***********************/
-                    uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
-                    int16_t *q = &qp[nxt_target * qlen];
-                    
-                    /***********************/
-                    
-                    // apply the band and the constraint (if provided)
-                    //        if (beg < i - w) beg = i - w;
-                    //        if (end > i + w + 1) end = i + w + 1;
-                    //        if (end > qlen) end = qlen;
-                    // compute the first column
-                    if (beg == 0) {
-                        h1 = h0 - (o_del + e_del * (i + 1));
-                        if (h1 < 0) h1 = 0;
-                    } else h1 = 0;
-                    //processing a row
-                    for (j = beg; LIKELY(j < end); ++j) {
-                        // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
-                        // Similar to SSE2-SW, cells are computed in the following order:
-                        //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
-                        //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
-                        //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
-                        eh_m *p = &eh[j];
-                        int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
-                        p->h = h1;          // set H(i,j-1) for the next row
-                        M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
-                        h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
-                        h = h > f? h : f;
-                        h1 = h;             // save H(i,j) to h1 for the next column
-                        mj = m > h? mj : j; // record the position where max score is achieved
-                        m = m > h? m : h;   // m is stored at eh[mj+1]
-                        t = M - oe_del;
-                        t = t > 0? t : 0;
-                        e -= e_del;
-                        e = e > t? e : t;   // computed E(i+1,j)
-                        p->e = e;           // save E(i+1,j) for the next row
-                        t = M - oe_ins;
-                        t = t > 0? t : 0;
-                        f -= e_ins;
-                        f = f > t? f : t;   // computed F(i,j+1)
-                    }
-                    h1=i<tlen?h1:0;
-                    eh[end].h = h1; eh[end].e = 0;
-                    if (j == qlen) {
-                        max_ie = gscore > h1? max_ie : i;
-                        gscore = gscore > h1? gscore : h1;
-                    }
-                    if (m == 0) break; //theoretically not important , can be change to bach
-                    if (m > max) {
-                        max = m, max_i = i, max_j = mj;
-                        max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
-                    } else if (zdrop > 0) {
-                        if (i - max_i > mj - max_j) {
-                            if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-                        } else {
-                            if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-                        }
-                    }
-                    // update beg and end for the next round
-//                    for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
-//                    beg = j;
-//                    for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
-//                    end = j + 2 < qlen? j + 2 : qlen;
-                    //beg = 0; end = qlen; // uncomment this line for debugging
-                }
-                
-                //finalize
-                free(eh); //free(qp);
-            
-                g_qle[batch_idx] = max_j+1;
-                g_tle[batch_idx] = max_i+1;
-                g_gtle[batch_idx] = max_ie+1;
-                g_gscore[batch_idx] = gscore;
-                g_max_off[batch_idx] = max_off;
-                g_score[batch_idx] = max;
-                //swlen_nxt_id++;
-                db_hash_nxt_id++;
-                
-            }
-        }
+        //process 16 query at a time
+        batch_sw_core(db_hash_batch_id,
+                            rdb_rev,
+                            qp_db,
+                            g_h0,//input
+                            o_del,
+                            e_del,
+                            o_ins,
+                            e_ins,
+                            zdrop,
+                           
+                            g_qle,//result
+                            g_tle,
+                            g_gtle,
+                            g_gscore,
+                            g_max_off,
+                            g_score
+                           
+                           );
         swlen_nxt_id = swlen_batch_id;
         for(batch_idx=0; batch_idx<next_process; batch_idx++)
         {
