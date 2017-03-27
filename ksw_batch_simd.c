@@ -690,6 +690,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
             h0s[process_batch_id]=g_h0[process_batch_id+grid_process_batch_idx*8];
+            assert( h0s[process_batch_id] >= 0);
         }
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
@@ -719,67 +720,35 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             gscores[process_batch_id]=-1;
             max_offs[process_batch_id]=0;
         }
-        
+      //  int16_t begs[8];
+        //int16_t neds[8];
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
         {
-            hash_t * db_hash_nxt_id=db_hash_batch_id+process_batch_id+grid_process_batch_idx*8;
-            int batch_idx = process_batch_id + grid_process_batch_idx*8;
-            uint16_t qlen = qlens[process_batch_id];//db_hash_nxt_id->qlen;
-            uint16_t tlen = tlens[process_batch_id];//db_hash_nxt_id->rlen;//seq->rlen;
+            begs[process_batch_id]=0;
+            ends[process_batch_id]=qlens[process_batch_id];
+        }
+        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+        {
             /***********************/
-            const int16_t *qp = qp_batch_nxt;//+g_m*((process_batch_id )*align_end);//malloc(qlen * m);
-            qp_batch_nxt=qp_batch_nxt+g_m*align_end;
-            //eh_m *eh; // score array
+            const int16_t *qp = qp_batch_nxt+process_batch_id*g_m*align_end;//+g_m*((process_batch_id )*align_end);//malloc(qlen * m);
             // query profile
             int16_t i, j;
-            int16_t beg, end;
-            
-            int16_t h0=h0s[process_batch_id];
-            assert(h0 >= 0);
             // allocate memory
-            beg = 0, end = qlen;//every seqs in a batch should have same qlen
-            
-            
-            // fill the first row
-
-            // adjust $w if it is too large
-            // DP loop
-//            int16_t max;
-        //    int16_t max_i;
-          //  int16_t max_j;
-      //      int16_t max_ie;
-        //    int16_t gscore;
-         //   int16_t max_off;
-       //     max = maxs[process_batch_id];
-        //    max_i = max_is[process_batch_id];
-         //   max_j = max_js[process_batch_id];
-        //    max_ie = max_ies[process_batch_id];
-       //     gscore = gscores[process_batch_id];
-          //  max_off = max_offs[process_batch_id];
-            
-            
             //MAIN SW
-            for (i = 0; LIKELY(i < tlen); ++i) {
+            for (i = 0; LIKELY(i < tlens[process_batch_id]); ++i) {
                 int t, f = 0, h1, m = 0, mj = -1;
                 int h_l=0, m_l=0, mj_l=0;
                 /***********************/
-                uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+batch_idx];
+                uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+process_batch_id + grid_process_batch_idx*8];
                 const  int16_t *q = &qp[nxt_target * align_end];
                 
-                /***********************/
-                {
-                    for(int i=0; i<align_end; i++)
-                    {
-                        qp_buff[i] = qp[nxt_target*align_end+i];
-                    }
-                }
                 // compute the first column
-                if (beg == 0) {
-                    h1 = h0 - (o_del + e_del * (i + 1));
+                if ( begs[process_batch_id] == 0) {
+                    h1 = h0s[process_batch_id] - (o_del + e_del * (i + 1));
                     if (h1 < 0) h1 = 0;
                 } else h1 = 0;
                 //processing a row
-                for (j = beg; LIKELY(j < end); ++j) {
+                for (j =  begs[process_batch_id]; LIKELY(j < ends[process_batch_id]); ++j) {
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
                     // Similar to SSE2-SW, cells are computed in the following order:
                     //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
@@ -804,17 +773,17 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     f -= e_ins;
                     f = f > t? f : t;   // computed F(i,j+1)
                     //record last h1, m, mj
-                    h_l=j<end?h1:h_l;
-                    m_l=j<end?m:m_l;
-                    mj_l=j<end?mj:mj_l;
+                    h_l=j<ends[process_batch_id]?h1:h_l;
+                    m_l=j<ends[process_batch_id]?m:m_l;
+                    mj_l=j<ends[process_batch_id]?mj:mj_l;
                 }
-                j=j<end?j:end;
+                j=j<ends[process_batch_id]?j:ends[process_batch_id];
                 h1=h_l;
                 m=m_l;
                 mj=mj_l;
-                h1=i<tlen?h1:0;
-                ehs[end][process_batch_id].h = h1; ehs[end][process_batch_id].e = 0;
-                if (j == qlen) {
+                h1=i<tlens[process_batch_id]?h1:0;
+                ehs[ends[process_batch_id]][process_batch_id].h = h1; ehs[ends[process_batch_id]][process_batch_id].e = 0;
+                if (j == qlens[process_batch_id]) {
                     max_ies[process_batch_id] = gscores[process_batch_id] > h1? max_ies[process_batch_id] : i;
                     gscores[process_batch_id] = gscores[process_batch_id] > h1? gscores[process_batch_id] : h1;
                 }
@@ -837,12 +806,12 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 //beg = 0; end = qlen; // uncomment this line for debugging
             }
             
-            g_qle[batch_idx] = max_js[process_batch_id]+1;
-            g_tle[batch_idx] = max_is[process_batch_id]+1;
-            g_gtle[batch_idx] = max_ies[process_batch_id]+1;
-            g_gscore[batch_idx] = gscores[process_batch_id];
-            g_max_off[batch_idx] = max_offs[process_batch_id];
-            g_score[batch_idx] = maxs[process_batch_id];
+            g_qle[process_batch_id + grid_process_batch_idx*8] = max_js[process_batch_id]+1;
+            g_tle[process_batch_id + grid_process_batch_idx*8] = max_is[process_batch_id]+1;
+            g_gtle[process_batch_id + grid_process_batch_idx*8] = max_ies[process_batch_id]+1;
+            g_gscore[process_batch_id + grid_process_batch_idx*8] = gscores[process_batch_id];
+            g_max_off[process_batch_id + grid_process_batch_idx*8] = max_offs[process_batch_id];
+            g_score[process_batch_id + grid_process_batch_idx*8] = maxs[process_batch_id];
             //db_hash_nxt_id++;
             
         }
