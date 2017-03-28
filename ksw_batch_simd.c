@@ -611,6 +611,11 @@ void batch_sw_core(hash_t* db_hash_batch_id,
             //db_hash_nxt_id++;
             
         }
+        
+        for(int i=0; i<align_end+1;i++)
+        {
+            free(ehs[i]);//=calloc(sizeof(eh_m)*8,1);
+        }
         free(ehs);
     }
     free(qp_buff);
