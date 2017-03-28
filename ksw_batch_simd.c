@@ -843,6 +843,14 @@ void batch_sw_core(hash_t* db_hash_batch_id,
 //                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
 //                    }
                 }
+            }
+            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+            {
+                int16_t j;
+                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) && ehs[j][process_batch_id].h == 0 && ehs[j][process_batch_id].e == 0; ++j);
+                begs[process_batch_id]=j;
+                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) && ehs[j][process_batch_id].h == 0 && ehs[j][process_batch_id].e == 0; --j);
+                ends[process_batch_id] = j + 2 < qlens[process_batch_id]? j + 2 : qlens[process_batch_id];
           //  fprintf(stderr,"zdrop is %d\n",zdrop);
                 // update beg and end for the next round
                 //                    for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
