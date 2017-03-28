@@ -680,6 +680,8 @@ void batch_sw_core(hash_t* db_hash_batch_id,
     
     int16_t* qp_buff = malloc(sizeof(int16_t)*PROCESSBATCH*align_end);
     memset(qp_buff,0,sizeof(int16_t)*PROCESSBATCH*align_end);
+    int16_t* qp_buff_rev = malloc(sizeof(int16_t)*PROCESSBATCH*align_end);
+    memset(qp_buff_rev,0,sizeof(int16_t)*PROCESSBATCH*align_end);
     
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
@@ -773,6 +775,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 memcpy(qp_buff_nxt,qp_batch_nxt+qp_ptr,align_end*sizeof(int16_t));
                 qp_buff_nxt+=align_end;
             }
+            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,align_end);
 
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
@@ -794,7 +797,12 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 //int16_t mj_l=mj_ls[process_batch_id];
                 /***********************/
 
-                const  int16_t *q = qp_buff+align_end*process_batch_id;
+                //const  int16_t *q = qp_buff+align_end*process_batch_id;
+                const  int16_t *q_rev = qp_buff_rev;
+//                for(int j=0; j<align_end; j++)
+//                {
+//                    assert(q[j]==q_rev[process_batch_id+j*PROCESSBATCH]);
+//                }
                 // compute the first column
                 if ( min_beg == 0) {
                     h1s[process_batch_id] = h0s[process_batch_id] - (o_del + e_del * (i + 1));
@@ -814,7 +822,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     
                     ehs[j][process_batch_id].h = h1s[process_batch_id];          // set H(i,j-1) for the next row
                     
-                    M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
+                    M = M? M + q_rev[process_batch_id+j*PROCESSBATCH] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
                     
                     h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
                     h = h > fs[process_batch_id]? h : fs[process_batch_id];
@@ -845,17 +853,6 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     max_ies[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? max_ies[process_batch_id] : i;
                     gscores[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? gscores[process_batch_id] : h1s[process_batch_id];
                 }
-   //             if (ms[process_batch_id] == 0) break; //theoretically not important , can be change to bach
-//                if (ms[process_batch_id] > maxs[process_batch_id]) {
-//                    maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
-//                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
-//                } else if (zdrop > 0) {
-//                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
-//                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del > zdrop) break;
-//                    } else {
-//                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
-//                    }
-//                }
             }
             //if the search should terminated earlier?
             uint8_t flag = 0;
@@ -910,6 +907,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         free(ehs);
     }
     free(qp_buff);
+    free(qp_buff_rev);
 }
 /**************/
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
