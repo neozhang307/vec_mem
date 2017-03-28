@@ -739,6 +739,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         //int16_t neds[8];
         int16_t ts[8], fs[8] , h1s[8], ms[8], mjs[8];
         int16_t h_ls[8], m_ls[8], mj_ls[8];
+        int16_t min_beg, max_end;
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
         {
             begs[process_batch_id]=0;
@@ -750,14 +751,20 @@ void batch_sw_core(hash_t* db_hash_batch_id,
 
             //MAIN SW
         for (int16_t i = 0; LIKELY(i < maxtlen); ++i) {
+            min_beg = begs[0];
+            max_end = ends[0];
+            for(int i=1; i<8; i++){
+                int16_t tbeg = begs[i];
+                int16_t tend = ends[i];
+                min_beg = min_beg<tbeg?min_beg:tbeg;
+                max_end = max_end>tbeg?max_end:tend;
+            }
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 /***********************/
                 const int16_t *qp = qp_batch_nxt+process_batch_id*g_m*align_end;
                 int16_t j;
-                begs[process_batch_id]=0;
-                ends[process_batch_id]=qlens[process_batch_id];
-                
+
                 fs[process_batch_id]=0;
                 ms[process_batch_id]=0;
                 mjs[process_batch_id]=-1;
@@ -774,13 +781,15 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+process_batch_id + grid_process_batch_idx*8];
                 const  int16_t *q = &qp[nxt_target * align_end];
                 
+
+                
                 // compute the first column
-                if ( begs[process_batch_id] == 0) {
+                if ( min_beg == 0) {
                     h1s[process_batch_id] = h0s[process_batch_id] - (o_del + e_del * (i + 1));
                     if (h1s[process_batch_id] < 0) h1s[process_batch_id] = 0;
                 } else h1s[process_batch_id] = 0;
                 //processing a row
-                for (j =  begs[process_batch_id]; LIKELY(j < ends[process_batch_id]); ++j) {
+                for (j =  min_beg; LIKELY(j < ends[process_batch_id]); ++j) {
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
                     // Similar to SSE2-SW, cells are computed in the following order:
                     //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
