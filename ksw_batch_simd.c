@@ -205,6 +205,13 @@ void printcmp(swrst_t* a, swrst_t*b, size_t size);
 uint8_t printdif(swrst_t* a, swrst_t*b, size_t size)
 {
     uint8_t ret = 0;
+   #define print(i) do{\
+            \
+            {\
+             fprintf(stderr,"i:%d ",i);   \
+                \
+            }\
+    }while(0)
     for(int i=0; i<size; i++)
     {
         //printf("process %d of sw\n",i);
@@ -215,35 +222,41 @@ uint8_t printdif(swrst_t* a, swrst_t*b, size_t size)
         {
             printcmp(&a_,&b_,1);
             ret|=1<<0;
+            print(i);
             continue;
         }
         if(a_.qle!=b_.qle)
         {
             printcmp(&a_,&b_,1);
             ret|=1<<1;
+            print(i);
             continue;
         }if(a_.tle!=b_.tle)
         {
             printcmp(&a_,&b_,1);
             ret|=1<<2;
+            print(i);
             continue;
         }
         if(a_.gtle!=b_.gtle)
         {
             printcmp(&a_,&b_,1);
             ret|=1<<3;
+            print(i);
             continue;
         }
         if(a_.gscore!=b_.gscore)
         {
             printcmp(&a_,&b_,1);
             ret|=1<<4;
+            print(i);
             continue;
         }
         if(a_.max_off!=b_.max_off)
         {
             printcmp(&a_,&b_,1);
             ret|=1<<5;
+            print(i);
             continue;
         }
         swseq_t* a_seq = a_.sw_seq;
@@ -255,6 +268,7 @@ uint8_t printdif(swrst_t* a, swrst_t*b, size_t size)
             {
                 printcmp(&a_,&b_,1);
                 ret|=1<<6;
+                print(i);
                 break;
             }
         }
@@ -265,6 +279,7 @@ uint8_t printdif(swrst_t* a, swrst_t*b, size_t size)
             {
                 printcmp(&a_,&b_,1);
                 ret|=1<<7;
+                print(i);
                 break;
             }
         }
@@ -732,15 +747,14 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         }
         
 
-        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-        {
-            /***********************/
-            const int16_t *qp = qp_batch_nxt+process_batch_id*g_m*align_end;
-            // query profile
-        int16_t i, j;
-            // allocate memory
+
             //MAIN SW
-        for (i = 0; LIKELY(i < maxtlen); ++i) {
+        for (int16_t i = 0; LIKELY(i < maxtlen); ++i) {
+            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+            {
+                /***********************/
+                const int16_t *qp = qp_batch_nxt+process_batch_id*g_m*align_end;
+                int16_t j;
                 begs[process_batch_id]=0;
                 ends[process_batch_id]=qlens[process_batch_id];
                 
@@ -806,17 +820,18 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     max_ies[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? max_ies[process_batch_id] : i;
                     gscores[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? gscores[process_batch_id] : h1s[process_batch_id];
                 }
-                if (ms[process_batch_id] == 0) break; //theoretically not important , can be change to bach
+   //             if (ms[process_batch_id] == 0) break; //theoretically not important , can be change to bach
                 if (ms[process_batch_id] > maxs[process_batch_id]) {
                     maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
                     max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
                 } else if (zdrop > 0) {
-                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
-                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del > zdrop) break;
-                    } else {
-                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
-                    }
+//                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
+//                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del > zdrop) break;
+//                    } else {
+//                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
+//                    }
                 }
+          //  fprintf(stderr,"zdrop is %d\n",zdrop);
                 // update beg and end for the next round
                 //                    for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
                 //                    beg = j;
@@ -1184,16 +1199,16 @@ void ksw_extend_batch(swrst_t* swrts, size_t size)
                         max_ie = gscore > h1? max_ie : i;
                         gscore = gscore > h1? gscore : h1;
                     }
-                    if (m == 0) break;
+               //     if (m == 0) break;
                     if (m > max) {
                         max = m, max_i = i, max_j = mj;
                         max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
                     } else if (zdrop > 0) {
-                        if (i - max_i > mj - max_j) {
-                            if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-                        } else {
-                            if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-                        }
+//                        if (i - max_i > mj - max_j) {
+//                            if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+//                        } else {
+//                            if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+//                        }
                     }
                     // update beg and end for the next round
          //           for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
