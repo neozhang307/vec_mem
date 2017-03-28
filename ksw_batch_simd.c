@@ -853,6 +853,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         }
         free(ehs);
     }
+    free(qp_buff);
 }
 /**************/
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
