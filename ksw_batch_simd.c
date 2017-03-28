@@ -757,8 +757,11 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 int16_t tbeg = begs[i];
                 int16_t tend = ends[i];
                 min_beg = min_beg<tbeg?min_beg:tbeg;
-                max_end = max_end>tbeg?max_end:tend;
+                max_end = max_end>tend?max_end:tend;
+          //      fprintf(stderr, "%d ",tend);
             }
+          //  fprintf(stderr, "\ncorrect is %d\n",max_end);
+            
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 /***********************/
@@ -789,7 +792,7 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     if (h1s[process_batch_id] < 0) h1s[process_batch_id] = 0;
                 } else h1s[process_batch_id] = 0;
                 //processing a row
-                for (j =  min_beg; LIKELY(j < ends[process_batch_id]); ++j) {
+                for (j =  min_beg; LIKELY(j < max_end); ++j) {
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
                     // Similar to SSE2-SW, cells are computed in the following order:
                     //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
