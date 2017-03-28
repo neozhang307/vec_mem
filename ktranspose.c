@@ -38,22 +38,22 @@ void transpose_8x8_hwords (__m128i w0, __m128i w1,
     __t7 = _mm_unpackhi_epi16(w6, w7);
     
     
-    __tt0 = (__m128i)_mm_shuffle_ps(__t0,__t2,_MM_SHUFFLE(1,0,1,0));
-    __tt1 = (__m128i)_mm_shuffle_ps(__t0,__t2,_MM_SHUFFLE(3,2,3,2));
-    __tt2 = (__m128i)_mm_shuffle_ps(__t1,__t3,_MM_SHUFFLE(1,0,1,0));
-    __tt3 = (__m128i)_mm_shuffle_ps(__t1,__t3,_MM_SHUFFLE(3,2,3,2));
-    __tt4 = (__m128i)_mm_shuffle_ps(__t4,__t6,_MM_SHUFFLE(1,0,1,0));
-    __tt5 = (__m128i)_mm_shuffle_ps(__t4,__t6,_MM_SHUFFLE(3,2,3,2));
-    __tt6 = (__m128i)_mm_shuffle_ps(__t5,__t7,_MM_SHUFFLE(1,0,1,0));
-    __tt7 = (__m128i)_mm_shuffle_ps(__t5,__t7,_MM_SHUFFLE(3,2,3,2));
-    *r0 = (__m128i)_mm_shuffle_ps(__tt0, __tt4, _MM_SHUFFLE( 2, 0, 2, 0));
-    *r1 = (__m128i)_mm_shuffle_ps(__tt0, __tt4, _MM_SHUFFLE( 3, 1, 3, 1));
-    *r2 = (__m128i)_mm_shuffle_ps(__tt1, __tt5, _MM_SHUFFLE( 2, 0, 2, 0));
-    *r3 = (__m128i)_mm_shuffle_ps(__tt1, __tt5, _MM_SHUFFLE( 3, 1, 3, 1));
-    *r4 = (__m128i)_mm_shuffle_ps(__tt2, __tt6, _MM_SHUFFLE( 2, 0, 2, 0));
-    *r5 = (__m128i)_mm_shuffle_ps(__tt2, __tt6, _MM_SHUFFLE( 3, 1, 3, 1));
-    *r6 = (__m128i)_mm_shuffle_ps(__tt3, __tt7, _MM_SHUFFLE( 2, 0, 2, 0));
-    *r7 = (__m128i)_mm_shuffle_ps(__tt3, __tt7, _MM_SHUFFLE( 3, 1, 3, 1));
+    __tt0 = (__m128i)_mm_shuffle_ps((__m128)__t0,(__m128)__t2,_MM_SHUFFLE(1,0,1,0));
+    __tt1 = (__m128i)_mm_shuffle_ps((__m128)__t0,(__m128)__t2,_MM_SHUFFLE(3,2,3,2));
+    __tt2 = (__m128i)_mm_shuffle_ps((__m128)__t1,(__m128)__t3,_MM_SHUFFLE(1,0,1,0));
+    __tt3 = (__m128i)_mm_shuffle_ps((__m128)__t1,(__m128)__t3,_MM_SHUFFLE(3,2,3,2));
+    __tt4 = (__m128i)_mm_shuffle_ps((__m128)__t4,(__m128)__t6,_MM_SHUFFLE(1,0,1,0));
+    __tt5 = (__m128i)_mm_shuffle_ps((__m128)__t4,(__m128)__t6,_MM_SHUFFLE(3,2,3,2));
+    __tt6 = (__m128i)_mm_shuffle_ps((__m128)__t5,(__m128)__t7,_MM_SHUFFLE(1,0,1,0));
+    __tt7 = (__m128i)_mm_shuffle_ps((__m128)__t5,(__m128)__t7,_MM_SHUFFLE(3,2,3,2));
+    *r0 = (__m128i)_mm_shuffle_ps((__m128)__tt0, (__m128)__tt4, _MM_SHUFFLE( 2, 0, 2, 0));
+    *r1 = (__m128i)_mm_shuffle_ps((__m128)__tt0, (__m128)__tt4, _MM_SHUFFLE( 3, 1, 3, 1));
+    *r2 = (__m128i)_mm_shuffle_ps((__m128)__tt1, (__m128)__tt5, _MM_SHUFFLE( 2, 0, 2, 0));
+    *r3 = (__m128i)_mm_shuffle_ps((__m128)__tt1, (__m128)__tt5, _MM_SHUFFLE( 3, 1, 3, 1));
+    *r4 = (__m128i)_mm_shuffle_ps((__m128)__tt2, (__m128)__tt6, _MM_SHUFFLE( 2, 0, 2, 0));
+    *r5 = (__m128i)_mm_shuffle_ps((__m128)__tt2, (__m128)__tt6, _MM_SHUFFLE( 3, 1, 3, 1));
+    *r6 = (__m128i)_mm_shuffle_ps((__m128)__tt3, (__m128)__tt7, _MM_SHUFFLE( 2, 0, 2, 0));
+    *r7 = (__m128i)_mm_shuffle_ps((__m128)__tt3, (__m128)__tt7, _MM_SHUFFLE( 3, 1, 3, 1));
 }
 
 void transpose_16x16_hwords (__m128i w0, __m128i w1,
@@ -113,40 +113,40 @@ void transpose_16x16_hwords (__m128i w0, __m128i w1,
     __tt14 = _mm_unpacklo_epi16(__t13, __t15);
     __tt15 = _mm_unpackhi_epi16(__t13, __t15);
     //4
-    __t0 = (__m128i)_mm_shuffle_ps(__tt0,__tt4,_MM_SHUFFLE(1,0,1,0));
-    __t1 = (__m128i)_mm_shuffle_ps(__tt0,__tt4,_MM_SHUFFLE(3,2,3,2));
-    __t2 = (__m128i)_mm_shuffle_ps(__tt1,__tt5,_MM_SHUFFLE(1,0,1,0));
-    __t3 = (__m128i)_mm_shuffle_ps(__tt1,__tt5,_MM_SHUFFLE(3,2,3,2));
-    __t4 = (__m128i)_mm_shuffle_ps(__tt2,__tt6,_MM_SHUFFLE(1,0,1,0));
-    __t5 = (__m128i)_mm_shuffle_ps(__tt2,__tt6,_MM_SHUFFLE(3,2,3,2));
-    __t6 = (__m128i)_mm_shuffle_ps(__tt3,__tt7,_MM_SHUFFLE(1,0,1,0));
-    __t7 = (__m128i)_mm_shuffle_ps(__tt3,__tt7,_MM_SHUFFLE(3,2,3,2));
-    __t8 = (__m128i)_mm_shuffle_ps(__tt8,__tt12,_MM_SHUFFLE(1,0,1,0));
-    __t9 = (__m128i)_mm_shuffle_ps(__tt8,__tt12,_MM_SHUFFLE(3,2,3,2));
-    __t10 = (__m128i)_mm_shuffle_ps(__tt9,__tt13,_MM_SHUFFLE(1,0,1,0));
-    __t11 = (__m128i)_mm_shuffle_ps(__tt9,__tt13,_MM_SHUFFLE(3,2,3,2));
-    __t12 = (__m128i)_mm_shuffle_ps(__tt10,__tt14,_MM_SHUFFLE(1,0,1,0));
-    __t13 = (__m128i)_mm_shuffle_ps(__tt10,__tt14,_MM_SHUFFLE(3,2,3,2));
-    __t14 = (__m128i)_mm_shuffle_ps(__tt11,__tt15,_MM_SHUFFLE(1,0,1,0));
-    __t15 = (__m128i)_mm_shuffle_ps(__tt11,__tt15,_MM_SHUFFLE(3,2,3,2));
+    __t0 = (__m128i)_mm_shuffle_ps((__m128)__tt0,(__m128)__tt4,_MM_SHUFFLE(1,0,1,0));
+    __t1 = (__m128i)_mm_shuffle_ps((__m128)__tt0,(__m128)__tt4,_MM_SHUFFLE(3,2,3,2));
+    __t2 = (__m128i)_mm_shuffle_ps((__m128)__tt1,(__m128)__tt5,_MM_SHUFFLE(1,0,1,0));
+    __t3 = (__m128i)_mm_shuffle_ps((__m128)__tt1,(__m128)__tt5,_MM_SHUFFLE(3,2,3,2));
+    __t4 = (__m128i)_mm_shuffle_ps((__m128)__tt2,(__m128)__tt6,_MM_SHUFFLE(1,0,1,0));
+    __t5 = (__m128i)_mm_shuffle_ps((__m128)__tt2,(__m128)__tt6,_MM_SHUFFLE(3,2,3,2));
+    __t6 = (__m128i)_mm_shuffle_ps((__m128)__tt3,(__m128)__tt7,_MM_SHUFFLE(1,0,1,0));
+    __t7 = (__m128i)_mm_shuffle_ps((__m128)__tt3,(__m128)__tt7,_MM_SHUFFLE(3,2,3,2));
+    __t8 = (__m128i)_mm_shuffle_ps((__m128)__tt8,(__m128)__tt12,_MM_SHUFFLE(1,0,1,0));
+    __t9 = (__m128i)_mm_shuffle_ps((__m128)__tt8,(__m128)__tt12,_MM_SHUFFLE(3,2,3,2));
+    __t10 = (__m128i)_mm_shuffle_ps((__m128)__tt9,(__m128)__tt13,_MM_SHUFFLE(1,0,1,0));
+    __t11 = (__m128i)_mm_shuffle_ps((__m128)__tt9,(__m128)__tt13,_MM_SHUFFLE(3,2,3,2));
+    __t12 = (__m128i)_mm_shuffle_ps((__m128)__tt10,(__m128)__tt14,_MM_SHUFFLE(1,0,1,0));
+    __t13 = (__m128i)_mm_shuffle_ps((__m128)__tt10,(__m128)__tt14,_MM_SHUFFLE(3,2,3,2));
+    __t14 = (__m128i)_mm_shuffle_ps((__m128)__tt11,(__m128)__tt15,_MM_SHUFFLE(1,0,1,0));
+    __t15 = (__m128i)_mm_shuffle_ps((__m128)__tt11,(__m128)__tt15,_MM_SHUFFLE(3,2,3,2));
     
     //8
-    *r0 = (__m128i)_mm_shuffle_ps(__t0,__t8,_MM_SHUFFLE(2,0,2,0));
-    *r1 = (__m128i)_mm_shuffle_ps(__t0,__t8,_MM_SHUFFLE(3,1,3,1));
-    *r2 = (__m128i)_mm_shuffle_ps(__t1,__t9,_MM_SHUFFLE(2,0,2,0));
-    *r3 = (__m128i)_mm_shuffle_ps(__t1,__t9,_MM_SHUFFLE(3,1,3,1));
-    *r4 = (__m128i)_mm_shuffle_ps(__t2,__t10,_MM_SHUFFLE(2,0,2,0));
-    *r5 = (__m128i)_mm_shuffle_ps(__t2,__t10,_MM_SHUFFLE(3,1,3,1));
-    *r6 = (__m128i)_mm_shuffle_ps(__t3,__t11,_MM_SHUFFLE(2,0,2,0));
-    *r7 = (__m128i)_mm_shuffle_ps(__t3,__t11,_MM_SHUFFLE(3,1,3,1));
-    *r8 = (__m128i)_mm_shuffle_ps(__t4,__t12,_MM_SHUFFLE(2,0,2,0));
-    *r9 = (__m128i)_mm_shuffle_ps(__t4,__t12,_MM_SHUFFLE(3,1,3,1));
-    *r10 = (__m128i)_mm_shuffle_ps(__t5,__t13,_MM_SHUFFLE(2,0,2,0));
-    *r11 = (__m128i)_mm_shuffle_ps(__t5,__t13,_MM_SHUFFLE(3,1,3,1));
-    *r12 = (__m128i)_mm_shuffle_ps(__t6,__t14,_MM_SHUFFLE(2,0,2,0));
-    *r13 = (__m128i)_mm_shuffle_ps(__t6,__t14,_MM_SHUFFLE(3,1,3,1));
-    *r14 = (__m128i)_mm_shuffle_ps(__t7,__t15,_MM_SHUFFLE(2,0,2,0));
-    *r15 = (__m128i)_mm_shuffle_ps(__t7,__t15,_MM_SHUFFLE(3,1,3,1));
+    *r0 = (__m128i)_mm_shuffle_ps((__m128)__t0,(__m128)__t8,_MM_SHUFFLE(2,0,2,0));
+    *r1 = (__m128i)_mm_shuffle_ps((__m128)__t0,(__m128)__t8,_MM_SHUFFLE(3,1,3,1));
+    *r2 = (__m128i)_mm_shuffle_ps((__m128)__t1,(__m128)__t9,_MM_SHUFFLE(2,0,2,0));
+    *r3 = (__m128i)_mm_shuffle_ps((__m128)__t1,(__m128)__t9,_MM_SHUFFLE(3,1,3,1));
+    *r4 = (__m128i)_mm_shuffle_ps((__m128)__t2,(__m128)__t10,_MM_SHUFFLE(2,0,2,0));
+    *r5 = (__m128i)_mm_shuffle_ps((__m128)__t2,(__m128)__t10,_MM_SHUFFLE(3,1,3,1));
+    *r6 = (__m128i)_mm_shuffle_ps((__m128)__t3,(__m128)__t11,_MM_SHUFFLE(2,0,2,0));
+    *r7 = (__m128i)_mm_shuffle_ps((__m128)__t3,(__m128)__t11,_MM_SHUFFLE(3,1,3,1));
+    *r8 = (__m128i)_mm_shuffle_ps((__m128)__t4,(__m128)__t12,_MM_SHUFFLE(2,0,2,0));
+    *r9 = (__m128i)_mm_shuffle_ps((__m128)__t4,(__m128)__t12,_MM_SHUFFLE(3,1,3,1));
+    *r10 = (__m128i)_mm_shuffle_ps((__m128)__t5,(__m128)__t13,_MM_SHUFFLE(2,0,2,0));
+    *r11 = (__m128i)_mm_shuffle_ps((__m128)__t5,(__m128)__t13,_MM_SHUFFLE(3,1,3,1));
+    *r12 = (__m128i)_mm_shuffle_ps((__m128)__t6,(__m128)__t14,_MM_SHUFFLE(2,0,2,0));
+    *r13 = (__m128i)_mm_shuffle_ps((__m128)__t6,(__m128)__t14,_MM_SHUFFLE(3,1,3,1));
+    *r14 = (__m128i)_mm_shuffle_ps((__m128)__t7,(__m128)__t15,_MM_SHUFFLE(2,0,2,0));
+    *r15 = (__m128i)_mm_shuffle_ps((__m128)__t7,(__m128)__t15,_MM_SHUFFLE(3,1,3,1));
     
 }
 
@@ -156,18 +156,18 @@ inline void transpose_4x4_dwords (__m128i w0, __m128i w1,
                                   __m128i *r2, __m128i *r3)
 {
     
-    __m128i x0 = (__m128i)_mm_shuffle_ps(w0, w1, _MM_SHUFFLE( 1, 0, 1,0)); // 0 1 4 5
+    __m128i x0 = (__m128i)_mm_shuffle_ps((__m128)w0, (__m128)w1, _MM_SHUFFLE( 1, 0, 1,0)); // 0 1 4 5
     
-    __m128i x1 = (__m128i)_mm_shuffle_ps (w0, w1,_MM_SHUFFLE(3, 2, 3, 2)); // 2 3 6 7
+    __m128i x1 = (__m128i)_mm_shuffle_ps ((__m128)w0,(__m128) w1,_MM_SHUFFLE(3, 2, 3, 2)); // 2 3 6 7
     
-    __m128i x2 = (__m128i)_mm_shuffle_ps (w2, w3,_MM_SHUFFLE(1, 0, 1,0)); // 8 9 12 13
+    __m128i x2 = (__m128i)_mm_shuffle_ps ((__m128)w2, (__m128)w3,_MM_SHUFFLE(1, 0, 1,0)); // 8 9 12 13
     
-    __m128i x3 = (__m128i)_mm_shuffle_ps (w2, w3, _MM_SHUFFLE(3, 2, 3,2)); // 10 11 14 15
+    __m128i x3 = (__m128i)_mm_shuffle_ps ((__m128)w2,(__m128) w3, _MM_SHUFFLE(3, 2, 3,2)); // 10 11 14 15
     
-    *r0 = (__m128i)_mm_shuffle_ps (x0, x2,_MM_SHUFFLE( 2, 0, 2,0));//0 4 8 12
-    *r1 = (__m128i)_mm_shuffle_ps (x0, x2,_MM_SHUFFLE( 3, 1, 3, 1));//1 5 9 13
-    *r2 = (__m128i)_mm_shuffle_ps (x1, x3,_MM_SHUFFLE( 2, 0, 2,0));//2 6 10 14
-    *r3 = (__m128i)_mm_shuffle_ps (x1, x3, _MM_SHUFFLE( 3, 1, 3, 1));//3 7 11 15
+    *r0 = (__m128i)_mm_shuffle_ps ((__m128)x0,(__m128) x2,_MM_SHUFFLE( 2, 0, 2,0));//0 4 8 12
+    *r1 = (__m128i)_mm_shuffle_ps ((__m128)x0, (__m128)x2,_MM_SHUFFLE( 3, 1, 3, 1));//1 5 9 13
+    *r2 = (__m128i)_mm_shuffle_ps ((__m128)x1, (__m128)x3,_MM_SHUFFLE( 2, 0, 2,0));//2 6 10 14
+    *r3 = (__m128i)_mm_shuffle_ps ((__m128)x1,(__m128) x3, _MM_SHUFFLE( 3, 1, 3, 1));//3 7 11 15
 }
 
 void transpose_16(int16_t*data_in, int16_t*data_out, int size_x, int size_y)
