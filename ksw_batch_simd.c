@@ -758,14 +758,25 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 int16_t tend = ends[i];
                 min_beg = min_beg<tbeg?min_beg:tbeg;
                 max_end = max_end>tend?max_end:tend;
-          //      fprintf(stderr, "%d ",tend);
             }
-          //  fprintf(stderr, "\ncorrect is %d\n",max_end);
             
+            //int16_t* qp_buff = malloc(sizeof(int16_t)*PROCESSBATCH*align_end);
+            //int16_t* nxt_qp_buff = qp_buff;
+            uint8_t t_targets[8];
+            memcpy(t_targets,target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*8,8*sizeof(uint8_t));
+            int16_t* qp_buff_nxt = qp_buff;
+            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
+            {
+                int qp_ptr = process_batch_id*g_m*align_end+t_targets[process_batch_id] * align_end;
+                
+                memcpy(qp_buff_nxt,qp_batch_nxt+qp_ptr,align_end*sizeof(int16_t));
+                qp_buff_nxt+=align_end;
+            }
+
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 /***********************/
-                const int16_t *qp = qp_batch_nxt+process_batch_id*g_m*align_end;
+                
                 int16_t j;
 
                 fs[process_batch_id]=0;
@@ -781,11 +792,8 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                 //int16_t m_l=m_ls[process_batch_id];
                 //int16_t mj_l=mj_ls[process_batch_id];
                 /***********************/
-                uint8_t nxt_target = target_rev_batch[i*BATCHSIZE+process_batch_id + grid_process_batch_idx*8];
-                const  int16_t *q = &qp[nxt_target * align_end];
-                
 
-                
+                const  int16_t *q = qp_buff+align_end*process_batch_id;
                 // compute the first column
                 if ( min_beg == 0) {
                     h1s[process_batch_id] = h0s[process_batch_id] - (o_del + e_del * (i + 1));
@@ -799,10 +807,14 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
                     //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
 
-                    int h, M = ehs[j][process_batch_id].h, e = ehs[j][process_batch_id].e; // get H(i-1,j-1) and E(i-1,j)
+                    int16_t h;
+                    int16_t M = ehs[j][process_batch_id].h;
+                    int16_t e = ehs[j][process_batch_id].e; // get H(i-1,j-1) and E(i-1,j)
                     
                     ehs[j][process_batch_id].h = h1s[process_batch_id];          // set H(i,j-1) for the next row
+                    
                     M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
+                    
                     h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
                     h = h > fs[process_batch_id]? h : fs[process_batch_id];
                     h1s[process_batch_id] = h;             // save H(i,j) to h1 for the next column
