@@ -750,7 +750,8 @@ void batch_sw_core(hash_t* db_hash_batch_id,
 
 
             //MAIN SW
-        for (int16_t i = 0; LIKELY(i < maxtlen); ++i) {
+        uint8_t break_flag = 0;
+        for (int16_t i = 0; LIKELY(i < maxtlen) && break_flag==0; ++i) {
             min_beg = begs[0];
             max_end = ends[0];
             for(int i=1; i<8; i++){
@@ -845,17 +846,40 @@ void batch_sw_core(hash_t* db_hash_batch_id,
                     gscores[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? gscores[process_batch_id] : h1s[process_batch_id];
                 }
    //             if (ms[process_batch_id] == 0) break; //theoretically not important , can be change to bach
-                if (ms[process_batch_id] > maxs[process_batch_id]) {
-                    maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
-                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
-                } else if (zdrop > 0) {
+//                if (ms[process_batch_id] > maxs[process_batch_id]) {
+//                    maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
+//                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
+//                } else if (zdrop > 0) {
 //                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
 //                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del > zdrop) break;
 //                    } else {
 //                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins > zdrop) break;
 //                    }
+//                }
+            }
+            //if the search should terminated earlier?
+            uint8_t flag = 0;
+            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+            {
+                // if (ms[process_batch_id] == 0) break;
+                if(ms[process_batch_id]!=0)
+                    flag=1;
+                if (ms[process_batch_id] > maxs[process_batch_id]) {
+                    maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
+                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
+                } else if (zdrop > 0) {
+                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
+                        //if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del <= zdrop) flag=1;
+                    } else {
+                        //if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins <= zdrop) flag=1;
+                    }
                 }
             }
+            if(flag==0)
+                break_flag=1;
+
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 int16_t j;
