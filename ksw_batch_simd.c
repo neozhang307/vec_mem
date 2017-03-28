@@ -356,10 +356,18 @@ typedef struct{
     size_t global_batch_id;//index of a batch in whole DB
     uint8_t local_id_y;//idx inside batch
 }hash_t;
+
+typedef struct{
+    uint16_t len;
+    uint16_t alined;
+    uint16_t batch_max_len;
+    uint8_t local_id_y;//idx inside batch
+    size_t global_batch_id;//index of a batch in whole D
+}packed_hash_t;
 #define CHECK do{fprintf(stderr,"successfully process to line %d\n",__LINE__);}while(0)
 
 
-void batch_sw_core(hash_t* db_hash_batch_id,
+void batch_sw_core(hash_t* db_hash_batch_id, packed_hash_t* ref_hash,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
@@ -382,8 +390,9 @@ void batch_sw_core(hash_t* db_hash_batch_id,
     hash_t*  db_hash_nxt_id = db_hash_batch_id;
     int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
     int align_end = db_hash_nxt_id->alined;
+    int ref_allign = ref_hash->alined;
     size_t batch_global_id =  db_hash_nxt_id->global_batch_id;
-
+    size_t ref_batch_global_id = ref_hash->global_batch_id;
     
     int16_t* qp_buff = malloc(sizeof(int16_t)*PROCESSBATCH*align_end);
     memset(qp_buff,0,sizeof(int16_t)*PROCESSBATCH*align_end);
@@ -392,7 +401,9 @@ void batch_sw_core(hash_t* db_hash_batch_id,
     
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
-        const uint8_t *target_rev_batch =  rdb_rev+batch_global_id;
+        const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
+  
+        
         const int16_t *qp_batch = qp_db +g_m*batch_global_id;
         const int16_t *qp_batch_nxt = qp_batch + g_m*grid_process_batch_idx*8*align_end;
         //process 8 query at a time for int16_t
@@ -400,8 +411,6 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         uint16_t maxqlen=0;
         uint16_t tlens[8];
         uint16_t maxtlen=0;
-        
-        
         
         eh_m **ehs=malloc(sizeof(eh_m*)*(align_end + 1));
         for(int i=0; i<align_end+1;i++)
@@ -426,12 +435,12 @@ void batch_sw_core(hash_t* db_hash_batch_id,
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
             hash_t *tmphash =db_hash_nxt_id+process_batch_id+grid_process_batch_idx*8;
-            
+            packed_hash_t * tmp_refhash = ref_hash+process_batch_id+grid_process_batch_idx*8;
             qlens[process_batch_id]=tmphash->qlen;
             maxqlen=maxqlen>tmphash->qlen?maxqlen:tmphash->qlen;
             
-            tlens[process_batch_id]=tmphash->rlen;
-            maxtlen=maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
+            tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
+            maxtlen=tmp_refhash->batch_max_len;//maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
         }
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
@@ -652,7 +661,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     
     hash_t* db_hash = malloc(sizeof(hash_t)*aligned_resize);//index related values should be aligned
     memset(db_hash,0,sizeof(hash_t)*aligned_resize);
-    
+    packed_hash_t* ref_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
+    memset(ref_hash,0,sizeof(packed_hash_t)*aligned_resize);
     int global_id_x = 0;
     //break a loop, which is easy to program
     {
@@ -701,53 +711,101 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         }
         global_id_x +=aligned_len;//point to end position
     }
-    uint8_t* rdb = malloc(global_id_x*BATCHSIZE);
-    uint8_t* rdb_rev = malloc(global_id_x*BATCHSIZE);
-    memset(rdb,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
-    memset(rdb_rev,0,sizeof(uint8_t)*global_id_x*BATCHSIZE);
+    int ref_global_id_x=0;
+    {
+        int ref_aligned_len=0;
+        int global_batch_id = 0;
+        int rlen_max = 0;
+        for(int i=0; i<resize_segs; i++)
+        {
+            for(int j=0,k=i*BATCHSIZE; k<resize&&j<BATCHSIZE; j++,k++)
+            {
+                swrst_t *sw = swrts+(swlen_resized[k]>>32);
+                swseq_t *seq = sw->sw_seq;
+                int rlen = seq->rlen;
+                rlen_max = rlen_max>rlen?rlen_max:rlen;
+            }
+            ref_aligned_len = ((rlen_max+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
+            global_batch_id = ref_global_id_x*BATCHSIZE;
+            for(int j=0; j<BATCHSIZE; j++)
+            {
+                packed_hash_t *cur_ref_hash = ref_hash+i*BATCHSIZE+j;
+                cur_ref_hash->local_id_y=j;
+                cur_ref_hash->global_batch_id=global_batch_id;
+                cur_ref_hash->alined=ref_aligned_len;
+                cur_ref_hash->batch_max_len=rlen_max;
+            }
+            ref_global_id_x+=ref_aligned_len;
+        }
+    }
+    
+
+    uint8_t* rdb2 = malloc(ref_global_id_x*BATCHSIZE);
+    uint8_t* rdb_rev2 = malloc(ref_global_id_x*BATCHSIZE);
+    memset(rdb2,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    memset(rdb_rev2,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    
     //copy reference to db
     
     /***********************/
     //reference should be reverse
     //swlen_resize size is resize
     //construct RDB;
+
+    
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
         swseq_t *seq = sw->sw_seq;
-        hash_t* rdb_hash_t = &db_hash[i];
-        rdb_hash_t->rlen=seq->rlen;
+        packed_hash_t* ref_hash_t = &ref_hash[i];
+        ref_hash_t->len=seq->rlen;
         
-        uint8_t* db_ptr = rdb+rdb_hash_t->global_batch_id+rdb_hash_t->local_id_y*rdb_hash_t->alined;
-        
-        memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
+        uint8_t* db_ptr2 = rdb2+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
+        memcpy(db_ptr2,seq->ref,seq->rlen*sizeof(uint8_t));
     }
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* ref_hash_t = &ref_hash[i];
+        uint8_t* db_ptr2 = rdb2+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
+        for(int j=0; j<seq->rlen; j++)
+        {
+        //    fprintf(stderr,"%d:%d",seq->ref[j],db_ptr2[j]);
+            assert(seq->ref[j]==db_ptr2[j]);
+        }
+    }
+    
+    
+
+    
     for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
     {
-        hash_t* rdb_hash_t = &db_hash[gride_batch_id*BATCHSIZE];
-        uint8_t* db_ptr = rdb + rdb_hash_t->global_batch_id;
-        uint8_t* db_rev_ptr = rdb_rev + rdb_hash_t->global_batch_id;
+        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
+        uint8_t* db_ptr2 = rdb2 + ref_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr2 = rdb_rev2 + ref_hash_t->global_batch_id;
         int x = BATCHSIZE;
-        int y = rdb_hash_t->alined;
-        transpose_8(db_ptr, db_rev_ptr, x, y);
+        int y = ref_hash_t->alined;
+        transpose_8(db_ptr2, db_rev_ptr2, x, y);
     }
-    //test
-#ifdef DEBUG
+    
+    
     {
-        hash_t* rdb_hash_t = &db_hash[1*BATCHSIZE];
-        uint8_t* db_ptr = rdb + rdb_hash_t->global_batch_id;
-        uint8_t* db_rev_ptr = rdb_rev + rdb_hash_t->global_batch_id;
+        packed_hash_t* rdb_hash_t = &ref_hash[1*BATCHSIZE];
+        uint8_t* db_ptr2 = rdb2 + rdb_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr2 = rdb_rev2 + rdb_hash_t->global_batch_id;
         int size_x = BATCHSIZE;
         int size_y = rdb_hash_t->alined;
         for(int id_x=0; id_x<size_x; id_x++)
         {
             for(int id_y=0; id_y<size_y; id_y++)
             {
-                assert(db_ptr[id_x*size_y+id_y]==db_rev_ptr[id_x+size_x*id_y]);
+                assert(db_ptr2[id_x*size_y+id_y]==db_rev_ptr2[id_x+size_x*id_y]);
             }
         }
     }
-#endif
+
+    
     /***********************/
     //generate profile
     //qprofile should be aligned to 256bit (16x16)|(8X32)
@@ -783,13 +841,14 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     
     uint64_t* swlen_batch_id = swlen_resized;//resize
     hash_t* db_hash_batch_id = db_hash;//aligned_resize
-    
+    packed_hash_t * ref_hash_batch_ptr = ref_hash;
     uint64_t* swlen_nxt_id = swlen_resized;//resize
     uint32_t remain = resize;
     uint32_t next_process = BATCHSIZE;
     for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
     {
         swlen_batch_id = swlen_resized+seg_idx* BATCHSIZE;
+        ref_hash_batch_ptr = ref_hash + seg_idx*BATCHSIZE;
         db_hash_batch_id = db_hash+seg_idx*BATCHSIZE;
         int16_t g_qle[BATCHSIZE];
         int16_t g_tle[BATCHSIZE];
@@ -817,8 +876,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             swlen_nxt_id++;
         }
         //process 16 query at a time
-        batch_sw_core(db_hash_batch_id,
-                            rdb_rev,
+        batch_sw_core(db_hash_batch_id,ref_hash_batch_ptr,
+                            rdb_rev2,
                             qp_db,
                             g_h0,//input
                             o_del,
@@ -852,8 +911,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     
     
     free(qp_db);
-    free(rdb);
-    free(rdb_rev);
+ //   free(rdb);
+ //   free(rdb_rev);
+    free(rdb2);
+    free(rdb_rev2);
     free(swlen);
     free(db_hash);
 }
