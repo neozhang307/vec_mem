@@ -630,8 +630,9 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         uint64_t tval=(uint64_t)i<<32;
         swseq_t* tseq = swrts[i].sw_seq;
         uint32_t qlen = tseq->qlen;
-        uint32_t rlen = tseq->rlen;
-        uint32_t mx = qlen>rlen?qlen:rlen;
+ //       uint32_t rlen = tseq->rlen;
+//        uint32_t mx = qlen>rlen?qlen:rlen;
+        uint32_t mx=qlen;
         tval|=mx;
         swlen[i]=tval;
     }
