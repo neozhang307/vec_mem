@@ -458,7 +458,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
     __m128i v_beg, v_end;
     __m128i v_max, v_max_i, v_max_j, v_max_ie, v_gscore,v_max_off;
     //reducable
-    __m128i v_h0 ;//= _mm_set1_epi32(0);
+    __m128i v_h0 = _mm_set1_epi32(0);
     
     int16_t buffer[8];
     
@@ -574,6 +574,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
         /***********new*************/
         //reducable
         __m128i v_t, v_f, v_h1, v_m, v_mj;
+        v_h1 = v_zero;
         //seems inreducable
         __m128i v_h_l, v_m_l, v_mj_l;
         int16_t min_beg2, max_end2;
@@ -657,7 +658,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 __m128i v_qp;
                 __m128i v_flag;
                 
-                __m128i cond,truecase,falsecase,out,tmp_h,tmp_l,tmp_flag;
+                __m128i cond,cond2,truecase,falsecase,out,tmp_h,tmp_l,tmp_flag;
                 __m128 tmp_out_true,tmp_out_false;
                 //processing a row
             
@@ -701,15 +702,17 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 int16_t local_es[8];
                 
                 __m128i v_j = v_zero;
-               
+                __m128i v_i = v_zero;
                 //processing a row
                 for (j =  min_beg; LIKELY(j < max_end); ++j) {
+                    v_i = _mm_set1_epi16(i);
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
                     // Similar to SSE2-SW, cells are computed in the following order:
                     //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
                     //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
                     //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
                     v_j =_mm_set1_epi16(j);
+
                    // int16_t h;
                     Ms[process_batch_id] = hs[j][process_batch_id];//ehs[j][process_batch_id].h;
                     v_M = v_hs[j];
@@ -853,9 +856,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                     _mm_store_si128((__m128i*)buffer,v_mj_l);
                     assert(mj_ls[process_batch_id]==buffer[process_batch_id]);
                 }
-                
+                v_j =_mm_set1_epi16(j);
                 //j=j<ends[process_batch_id]?j:ends[process_batch_id];
-                v_j = _mm_min_epi16(v_j, v_end);
+                
                 
                 h1s[process_batch_id]=h_ls[process_batch_id];
                 v_h = v_h_l;
@@ -873,11 +876,34 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 
                 hs[j][process_batch_id] = h1s[process_batch_id]; es[ends[process_batch_id]][process_batch_id] = 0;
                 j=j<ends[process_batch_id]?j:ends[process_batch_id];
-//                ehs[ends[process_batch_id]][process_batch_id].h = h1s[process_batch_id]; ehs[ends[process_batch_id]][process_batch_id].e = 0;
+                
+                v_hs[j]=v_h1;
+                
+                v_j = _mm_min_epi16(v_j, v_end);
+                cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change
+                                                    // when true potentially change
+                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                
+
+                
+                cond2 = _mm_cmplt_epi16(v_gscore, v_h1);// when false no change
+                                                        // when true potentially change
+                
+                cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
+                cond = _mm_and_ps(cond2, cond);
+                
+                (tmp_out_true)=_mm_and_ps(cond,v_i);
+                (tmp_out_false)=_mm_andnot_ps(cond,v_max_ie);
+                v_max_ie = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+                
+                (tmp_out_true)=_mm_and_ps(cond,v_h1);
+                (tmp_out_false)=_mm_andnot_ps(cond,v_gscore);
+                v_gscore = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
                 if (j == qlens[process_batch_id]) {
                     max_ies[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? max_ies[process_batch_id] : i;
                     gscores[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? gscores[process_batch_id] : h1s[process_batch_id];
                 }
+                
             }
             }
             //if the search should terminated earlier?
