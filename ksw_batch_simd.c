@@ -899,9 +899,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 (tmp_out_true)=_mm_and_ps(cond,v_h1);
                 (tmp_out_false)=_mm_andnot_ps(cond,v_gscore);
                 v_gscore = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                if (j == qlens[process_batch_id]) {
-                    max_ies[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? max_ies[process_batch_id] : i;
-                    gscores[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? gscores[process_batch_id] : h1s[process_batch_id];
+                if (j == qlens[process_batch_id]&&gscores[process_batch_id] <= h1s[process_batch_id]) {
+                    max_ies[process_batch_id] = i;
+                    gscores[process_batch_id] =  h1s[process_batch_id];
                 }
                 
             }
