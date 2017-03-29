@@ -929,13 +929,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 } else h1s[process_batch_id] = 0;
                 //processing a row
                 
-                _mm_store_si128((__m128i*)buffer,v_h1);
-//                if(i==0)
-//                {
-//                    fprintf(stderr,"h1s: mine/correct = %d/%d \n",buffer[process_batch_id],h1s[process_batch_id]);
-//                    assert(buffer[process_batch_id]==h1s[process_batch_id]);
-//                }
-                
                 int16_t Ms[8];
                 int16_t local_hs[8];
                 int16_t local_es[8];
@@ -950,192 +943,55 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                     //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
                     
 
-                   // int16_t h;
                     Ms[process_batch_id] = hs[j][process_batch_id];//ehs[j][process_batch_id].h;
                     
-                    
                     local_es[process_batch_id] = es[j][process_batch_id];//ehs[j][process_batch_id].e; // get H(i-1,j-1) and E(i-1,j)
-                   
-                    
-//                    ehs[j][process_batch_id].h = h1s[process_batch_id];          // set H(i,j-1) for the next row
+                    // set H(i,j-1) for the next row
                     hs[j][process_batch_id] = h1s[process_batch_id];
-//                    v_h1 = _mm_load_si128((__m128i*)&h1s);
-//                    v_hs[j]=v_h1;
-//                    
-//                    
-//                    v_M = _mm_load_si128((__m128i*)Ms);
                     int tmpM = Ms[process_batch_id] ;
-                   // fprintf(stderr,"prev M:%d\n",tmpM);
                     tmpM = tmpM? tmpM + q_rev[process_batch_id+j*PROCESSBATCH] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
                     Ms[process_batch_id] = tmpM;
                     
-//                    cond =_mm_cmpeq_epi16(v_M,v_zero);
-//                    __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev)+j);
-//                    falsecase = _mm_adds_epi16(v_M, tmp_qp);
-//                    cmp_process_epi(cond, v_zero, falsecase, v_M, tmp_h,tmp_l,tmp_flag,tmp_out_true,tmp_out_false);
-//                    
-//                    _mm_store_si128((__m128i*)buffer,v_M);
-//                    //fprintf(stderr,"i/j = %d/%d \n",i,j);
-//                    //fprintf(stderr,"mine/correct = %d/%d \n",buffer[process_batch_id],Ms[process_batch_id]);
-//                    assert(Ms[process_batch_id]==buffer[process_batch_id]);
-//                    
-                    
                     local_hs[process_batch_id] = Ms[process_batch_id] > local_es[process_batch_id]? Ms[process_batch_id] : local_es[process_batch_id];   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
-//                    v_h = _mm_max_epi16(v_M, v_e);
-//                    _mm_store_si128((__m128i*)buffer,v_h);
-//             //       fprintf(stderr,"H:mine/correct = %d/%d \n",buffer[process_batch_id],local_hs[process_batch_id]);
-//                    assert(local_hs[process_batch_id]==buffer[process_batch_id]);
-//                    
-//                    v_f = _mm_load_si128((__m128i*)&fs);
                     local_hs[process_batch_id] = local_hs[process_batch_id] > fs[process_batch_id]? local_hs[process_batch_id] : fs[process_batch_id];
-//                    v_h = _mm_max_epi16(v_h, v_f);
-                    
+  
                     
                     h1s[process_batch_id] = local_hs[process_batch_id];             // save H(i,j) to h1 for the next column
-//                    v_h1 = v_h;
-//                    _mm_store_si128((__m128i*)buffer,v_h1);
-//                    assert(h1s[process_batch_id]==buffer[process_batch_id]);
-                    
-//                    //condition+2
-//                    v_m = _mm_load_si128((__m128i*)ms);
-//                    v_mj = _mm_load_si128((__m128i*)mjs);
-//                    cond = _mm_cmpgt_epi16(v_m, v_h);
-//                    truecase = v_mj;
-//                    falsecase = v_j;
-//                    
-//                    cmp_int16flag_change(cond,v_zero,cond,tmp_h,tmp_l);
-//
-//                    (tmp_out_true)=_mm_and_ps(cond,v_mj);
-//                    (tmp_out_false)=_mm_andnot_ps(cond,falsecase);
-//                    v_mj =(__m128i) _mm_or_ps(tmp_out_true, tmp_out_false);
                     mjs[process_batch_id] = ms[process_batch_id] > local_hs[process_batch_id]?  mjs[process_batch_id] : j; // record the position where max score is achieved
-//                    _mm_store_si128((__m128i*)buffer,v_mj);
-//                    assert(mjs[process_batch_id]==buffer[process_batch_id]);
-                    
-                    
-//                    
-//                    (tmp_out_true)=_mm_and_ps(cond,v_m);
-//                    (tmp_out_false)=_mm_andnot_ps(cond,v_h);
-//                    v_m =(__m128i) _mm_or_ps(tmp_out_true, tmp_out_false);
                     ms[process_batch_id] = ms[process_batch_id] > local_hs[process_batch_id]? ms[process_batch_id] : local_hs[process_batch_id];   // m is stored at eh[mj+1]
-//                    _mm_store_si128((__m128i*)buffer,v_m);
-//                    assert(ms[process_batch_id]==buffer[process_batch_id]);
-//                    //saturation
                     
                     ts[process_batch_id] = Ms[process_batch_id] - oe_del;
                     ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
-//                    v_t=_mm_subs_epu16(v_M, v_oe_del);
-                    
                     local_es[process_batch_id] -= e_del;
-//                    v_e = _mm_subs_epu16(v_e, v_e_del);
-                    //condition+1
-                    local_es[process_batch_id] = local_es[process_batch_id] > ts[process_batch_id]? local_es[process_batch_id] : ts[process_batch_id];   // computed E(i+1,j)
-//                    cond = _mm_cmpgt_epi16(v_e, v_t);
-//                    cmp_int16flag_change(cond,v_zero,cond,tmp_h,tmp_l);
-//                    (tmp_out_true)=_mm_and_ps(cond,v_e);
-//                    (tmp_out_false)=_mm_andnot_ps(cond,v_t);
-//                    v_e = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//                    _mm_store_si128((__m128i*)buffer,v_e);
-//                    assert(local_es[process_batch_id]==buffer[process_batch_id]);
+                    local_es[process_batch_id] = local_es[process_batch_id] > ts[process_batch_id]? local_es[process_batch_id] : ts[process_batch_id];   // computed E(i+1,j
                     
                     es[j][process_batch_id]= local_es[process_batch_id];           // save E(i+1,j) for the next row
-//                    ehs[j][process_batch_id].e = e;           // save E(i+1,j) for the next row
-//                    v_es[j]=v_e;
                     
                     //saturation
                     ts[process_batch_id] = Ms[process_batch_id] - oe_ins;
                     ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
-//                    v_t = _mm_subs_epu16(v_M, v_oe_ins);
                     
                     fs[process_batch_id] -= e_ins;
-//                    v_f = _mm_subs_epu16(v_f, v_e_ins);
                     //condition+1
                     fs[process_batch_id] = fs[process_batch_id] > ts[process_batch_id]? fs[process_batch_id] : ts[process_batch_id];   // computed F(i,j+1)
-//                    cond = _mm_cmpgt_epi16(v_f, v_t);
-//                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-//                    (tmp_out_true)=_mm_and_ps(cond,v_f);
-//                    (tmp_out_false)=_mm_andnot_ps(cond,v_t);
-//                    v_f = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//                    _mm_store_si128((__m128i*)buffer,v_f);
-//                    assert(fs[process_batch_id]==buffer[process_batch_id]);
-                    //record last h1, m, mj
+
                     //condition+3
+                    //redo unnecessary data
                     h_ls[process_batch_id]=j<ends[process_batch_id]?h1s[process_batch_id]:h_ls[process_batch_id];
                     m_ls[process_batch_id]=j<ends[process_batch_id]?ms[process_batch_id]: m_ls[process_batch_id];
                     mj_ls[process_batch_id]=j<ends[process_batch_id]?mjs[process_batch_id]:mj_ls[process_batch_id];
-//                    v_end = _mm_load_si128((__m128i*)ends);
-//                    cond =_mm_cmplt_epi16(v_j, v_end);
-//                    _mm_store_si128((__m128i*)buffer,v_j);
-//                  //  fprintf(stderr,"J:mine/correct = %d/%d \n",buffer[process_batch_id],j);
-//                    _mm_store_si128((__m128i*)buffer,v_end);
-//                    fprintf(stderr,"E:mine/correct = %d/%d \n",buffer[process_batch_id],ends[process_batch_id]);
-//                    _mm_store_si128((__m128i*)buffer,cond);
-//                    fprintf(stderr,"C:mine/correct = %d/%d \n",buffer[process_batch_id],j<ends[process_batch_id]);
-                    
-                    //redo unneccesary search
-//                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-//                    (tmp_out_true)=_mm_and_ps(cond,v_h1);
-//                    (tmp_out_false)=_mm_andnot_ps(cond,v_h_l);
-//                    v_h_l = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//                    
-//                    (tmp_out_true)=_mm_and_ps(cond,v_m);
-//                    (tmp_out_false)=_mm_andnot_ps(cond,v_m_l);
-//                    v_m_l = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//                    (tmp_out_true)=_mm_and_ps(cond,v_mj);
-//                    (tmp_out_false)=_mm_andnot_ps(cond,v_mj_l);
-//                    v_mj_l = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//
-//                    
-//                    _mm_store_si128((__m128i*)buffer,v_h_l);
-//                    assert(h_ls[process_batch_id]==buffer[process_batch_id]);
-//                    _mm_store_si128((__m128i*)buffer,v_m_l);
-//                    assert(m_ls[process_batch_id]==buffer[process_batch_id]);
-//                    _mm_store_si128((__m128i*)buffer,v_mj_l);
-//                    assert(mj_ls[process_batch_id]==buffer[process_batch_id]);
                 }
-//                v_j =_mm_set1_epi16(j);
-                //j=j<ends[process_batch_id]?j:ends[process_batch_id];
-                
                 
                 h1s[process_batch_id]=h_ls[process_batch_id];
-//                v_h = v_h_l;
                 ms[process_batch_id]= m_ls[process_batch_id];
-//                v_m = v_m_l;
                 mjs[process_batch_id]=mj_ls[process_batch_id];
-//                v_mj = v_mj_l;
                 
                 //redo unneccesary search
                 h1s[process_batch_id]=i<tlens[process_batch_id]?h1s[process_batch_id]:0;
-//                cond = _mm_cmplt_epi16(_mm_set1_epi16(i), v_tlen);
-//                (tmp_out_true)=_mm_and_ps(cond,v_h1);
-//                (tmp_out_false)=_mm_andnot_ps(cond,v_zero);
-//                v_h1 = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
                 
                 hs[j][process_batch_id] = h1s[process_batch_id]; es[ends[process_batch_id]][process_batch_id] = 0;
                 j=j<ends[process_batch_id]?j:ends[process_batch_id];
                 
-//                v_hs[j]=v_h1;
-                
-//                v_j = _mm_min_epi16(v_j, v_end);
-//                cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change
-                                                    // when true potentially change
-//                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                
-
-                
-//                cond2 = _mm_cmplt_epi16(v_gscore, v_h1);// when false no change
-                                                        // when true potentially change
-                
-//                cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
-//                cond = _mm_and_ps(cond2, cond);
-                
-//                (tmp_out_true)=_mm_and_ps(cond,v_i);
-//                (tmp_out_false)=_mm_andnot_ps(cond,v_max_ie);
-//                v_max_ie = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                
-//                (tmp_out_true)=_mm_and_ps(cond,v_h1);
-//                (tmp_out_false)=_mm_andnot_ps(cond,v_gscore);
-//                v_gscore = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
                 if (j == qlens[process_batch_id]&&gscores[process_batch_id] <= h1s[process_batch_id]) {
                     max_ies[process_batch_id] = i;
                     gscores[process_batch_id] =  h1s[process_batch_id];
