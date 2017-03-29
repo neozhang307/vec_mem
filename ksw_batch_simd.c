@@ -400,6 +400,13 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 } while (0)
     
     int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
+     __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins;
+    v_zero = _mm_set1_epi32(0);
+    v_oe_del = _mm_set1_epi16(o_del + e_del);
+    v_e_del = _mm_set1_epi16(e_del);
+    v_oe_ins = _mm_set1_epi16(o_ins + e_ins);
+    v_e_ins = _mm_set1_epi16(e_ins);
+    
     int que_align = que_hash->alined;
     
     size_t ref_batch_global_id = ref_hash->global_batch_id;
@@ -410,6 +417,26 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
     int16_t* qp_buff_rev = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
     memset(qp_buff_rev,0,sizeof(int16_t)*PROCESSBATCH*que_align);
     
+    
+    uint16_t qlens[8];
+    uint16_t maxqlen=0;
+    uint16_t tlens[8];
+    uint16_t maxtlen=0;
+    __m128i v_qlen, v_tlen;//no smaller
+    
+  
+    int16_t begs[8], ends[8];
+    int16_t maxs[8], max_is[8], max_js[8], max_ies[8], gscores[9], max_offs[8];
+    int16_t h0s[8];
+    
+    //inreducable
+    __m128i v_beg, v_end;
+    __m128i v_max, v_max_i, v_max_j, v_max_ie, v_gscore,v_max_off;
+    //reducable
+    __m128i v_h0 ;//= _mm_set1_epi32(0);
+    
+    uint16_t buffer[8];
+    
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
         const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
@@ -418,49 +445,82 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
         const int16_t *qp_batch_nxt = qp_batch + g_m*grid_process_batch_idx*8*que_align;
         
         //process 8 query at a time for int16_t
-        uint16_t qlens[8];
-        uint16_t maxqlen=0;
-        uint16_t tlens[8];
-        uint16_t maxtlen=0;
+        /********new*******/
+        //move assert outside.
+        v_h0=_mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
+        /**************/
         
-//        eh_m **ehs=malloc(sizeof(eh_m*)*(que_align + 1));
+        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+        {
+            h0s[process_batch_id]=g_h0[process_batch_id+grid_process_batch_idx*8];
+           
+            assert( h0s[process_batch_id] >= 0);
+        }
+//        _mm_store_si128((__m128i*)buffer,v_h0);
+//        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+//        {
+//            assert(h0s[process_batch_id]==buffer[process_batch_id]);
+//        }
+        
         uint16_t **es=malloc(sizeof(uint16_t*)*(que_align + 1));
         uint16_t **hs=malloc(sizeof(uint16_t*)*(que_align + 1));
         for(int i=0; i<que_align+1;i++)
         {
-//            ehs[i]=calloc(sizeof(eh_m)*8,1);
             hs[i]=calloc(sizeof(uint16_t)*8,1);
             es[i]=calloc(sizeof(uint16_t)*8,1);
         }
-        int16_t begs[8], ends[8];
-        int16_t maxs[8], max_is[8], max_js[8], max_ies[8], gscores[9], max_offs[8];
-        int16_t h0s[8];
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+        /********new*******/
+        __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
+        __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
+        
+        
+        v_hs[0]=v_h0;
+        v_hs[1]=_mm_subs_epu16(v_h0, v_oe_ins);
+        for(int j=2; j<=que_align; j++)
         {
-            h0s[process_batch_id]=g_h0[process_batch_id+grid_process_batch_idx*8];
-            assert( h0s[process_batch_id] >= 0);
+            __m128i v_tmp = v_hs[j-1];
+            
+            v_tmp = _mm_subs_epu16(v_tmp, v_e_ins);
+            
+            if(!_mm_movemask_epi8(_mm_cmpneq_pd(v_tmp, v_zero)))
+            {
+                break;//when all equal to zero, break;
+            }
+            v_hs[j]=v_tmp;
         }
+        /**************/
+        
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
-//            ehs[0][process_batch_id].h=h0s[process_batch_id];
             hs[0][process_batch_id]=h0s[process_batch_id];
-//            ehs[1][process_batch_id].h=h0s[process_batch_id]>oe_ins?h0s[process_batch_id]-oe_ins:0;
+            
             hs[1][process_batch_id]=h0s[process_batch_id]>oe_ins?h0s[process_batch_id]-oe_ins:0;
+            
             for (int j = 2; j <= que_align && hs[j-1][process_batch_id] > e_ins; ++j)
-//                ehs[j][process_batch_id].h = ehs[j-1][process_batch_id].h - e_ins;
                 hs[j][process_batch_id] = hs[j-1][process_batch_id] - e_ins;
         }
+//debug
+        for(int line =0; line<que_align; line++)
+        {
+            _mm_store_si128((__m128i*)buffer, v_hs[line]);
+            for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+            {
+                assert(hs[line][process_batch_id]==buffer[process_batch_id]);
+            }
+        }
+        /*********keeep************/
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
             // hash_t *tmphash =db_hash_nxt_id+process_batch_id+grid_process_batch_idx*8;
             packed_hash_t * tmp_quehash = que_hash+process_batch_id+grid_process_batch_idx*8;
             packed_hash_t * tmp_refhash = ref_hash+process_batch_id+grid_process_batch_idx*8;
             qlens[process_batch_id]=tmp_quehash->len;
-            maxqlen=maxqlen>tmp_quehash->len?maxqlen:tmp_quehash->len;
+            maxqlen=tmp_quehash->batch_max_len;//maxqlen>tmp_quehash->len?maxqlen:tmp_quehash->len;
             
             tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
             maxtlen=tmp_refhash->batch_max_len;//maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
         }
+        /************************/
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
             int batch_idx = process_batch_id + grid_process_batch_idx*8;
@@ -508,7 +568,6 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                 
             }
             transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
-            //transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,align_end);
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 /***********************/
@@ -631,15 +690,8 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
             g_gscore[process_batch_id + grid_process_batch_idx*8] = gscores[process_batch_id];
             g_max_off[process_batch_id + grid_process_batch_idx*8] = max_offs[process_batch_id];
             g_score[process_batch_id + grid_process_batch_idx*8] = maxs[process_batch_id];
-            //db_hash_nxt_id++;
-            
+
         }
-        
-//        for(int i=0; i<que_align+1;i++)
-//        {
-//            free(ehs[i]);//=calloc(sizeof(eh_m)*8,1);
-//        }
-//        free(ehs);
         for(int i=0; i<que_align+1;i++)
         {
             free(es[i]);//=calloc(sizeof(eh_m)*8,1);
@@ -647,9 +699,13 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
         }
         free(hs);
         free(es);
+        free(v_hs);
+        free(v_es);
+
     }
     free(qp_buff);
     free(qp_buff_rev);
+
 }
 
 
