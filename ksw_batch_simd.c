@@ -391,6 +391,8 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    
                    )
 {
+    
+    
 #define __max_8(ret, xx) do { \
 (xx) = _mm_max_epi16((xx), _mm_srli_si128((xx), 8)); \
 (xx) = _mm_max_epi16((xx), _mm_srli_si128((xx), 4)); \
@@ -411,6 +413,18 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
     v_e_del = _mm_set1_epi16(e_del);
     v_oe_ins = _mm_set1_epi16(o_ins + e_ins);
     v_e_ins = _mm_set1_epi16(e_ins);
+    //Lingqi: below code would be process only if v_zero is already defined and set to 0
+#define cmp_process_epi(flag_,truecase,falsecase,out,tmp_h,tmp_l,tmp_flag,tmp_out_true,tmp_out_false) do{\
+(tmp_h) = _mm_unpackhi_epi16(flag_, v_zero); \
+(tmp_l) = _mm_unpacklo_epi16(v_zero, flag_);\
+(tmp_h) = _mm_cmpneq_ps(tmp_h, v_zero);\
+(tmp_l) = _mm_cmpneq_ps(tmp_l, v_zero);\
+(tmp_flag) = _mm_packs_epi16(tmp_l, tmp_h);\
+(tmp_out_true)=_mm_and_ps(tmp_flag,truecase);\
+(tmp_out_false)=_mm_andnot_ps(tmp_flag,falsecase);\
+out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
+}while(0)
+    
     
     int que_align = que_hash->alined;
     
@@ -440,7 +454,7 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
     //reducable
     __m128i v_h0 ;//= _mm_set1_epi32(0);
     
-    uint16_t buffer[8];
+    int16_t buffer[8];
     
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
@@ -603,8 +617,6 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                 qp_buff_nxt+=que_align;
                 
             }
-            
-            
             transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
             /***********************/
             {
@@ -638,10 +650,15 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                 __m128i v_e;
                 __m128i v_qp;
                 __m128i v_flag;
+                
+                __m128i cond,truecase,falsecase,out,tmp_h,tmp_l,tmp_flag,tmp_out_true,tmp_out_false;
+                
                 //processing a row
             
             /*************************/
             
+                
+                
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 /***********************/
@@ -676,6 +693,7 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                 int16_t local_hs[8];
                 int16_t local_es[8];
 
+               
                 //processing a row
                 for (j =  min_beg; LIKELY(j < max_end); ++j) {
                     // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
@@ -696,10 +714,22 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                     v_hs[j]=v_h1;
                     
                     
-                    //v_M = _mm_load_si128((__m128i*)Ms);
+                    v_M = _mm_load_si128((__m128i*)Ms);
                     int tmpM = Ms[process_batch_id] ;
+                   // fprintf(stderr,"prev M:%d\n",tmpM);
                     tmpM = tmpM? tmpM + q_rev[process_batch_id+j*PROCESSBATCH] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
                     Ms[process_batch_id] = tmpM;
+                    
+                    cond =_mm_cmpeq_epi16(v_M,v_zero);
+                    __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev)+j);
+                    falsecase = _mm_adds_epi16(v_M, tmp_qp);
+                    cmp_process_epi(cond, v_zero, falsecase, v_M, tmp_h,tmp_l,tmp_flag,tmp_out_true,tmp_out_false);
+                    
+                    _mm_store_si128((__m128i*)buffer,v_M);
+                    //fprintf(stderr,"i/j = %d/%d \n",i,j);
+                    //fprintf(stderr,"mine/correct = %d/%d \n",buffer[process_batch_id],Ms[process_batch_id]);
+                    assert(Ms[process_batch_id]==buffer[process_batch_id]);
+                    
                     
                     local_hs[process_batch_id] = Ms[process_batch_id] > local_es[process_batch_id]? Ms[process_batch_id] : local_es[process_batch_id];   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
                     local_hs[process_batch_id] = local_hs[process_batch_id] > fs[process_batch_id]? local_hs[process_batch_id] : fs[process_batch_id];
