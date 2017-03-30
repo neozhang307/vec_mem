@@ -812,105 +812,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
            //     show("v_max ie after: ", buffer, v_max_ie);
            //     show("v_gscore ie after: ", buffer, v_gscore);
             }
-            
-
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-            {
-                /***********************/
-                
-                int16_t j;
-                
-                fs[process_batch_id]=0;
-                ms[process_batch_id]=0;
-                mjs[process_batch_id]=-1;
-                h_ls[process_batch_id]=0;
-                m_ls[process_batch_id]=0;
-                mj_ls[process_batch_id]=0;
-                
-                
-                /***********************/
-                
-                const  int16_t *q_rev = qp_buff_rev;
-                // compute the first column
-                if ( min_beg == 0) {
-                    h1s[process_batch_id] = h0s[process_batch_id] - (o_del + e_del * (i + 1));
-                    if (h1s[process_batch_id] < 0) h1s[process_batch_id] = 0;
-                } else h1s[process_batch_id] = 0;
-                //processing a row
-                
-                int16_t Ms[8];
-                int16_t local_hs[8];
-                int16_t local_es[8];
-                
-                //processing a row
-                for (j =  min_beg; LIKELY(j < max_end); ++j) {
-                    
-                    // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
-                    // Similar to SSE2-SW, cells are computed in the following order:
-                    //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
-                    //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
-                    //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
-                    
-
-                    Ms[process_batch_id] = hs[j][process_batch_id];//ehs[j][process_batch_id].h;
-                    
-                    local_es[process_batch_id] = es[j][process_batch_id];//ehs[j][process_batch_id].e; // get H(i-1,j-1) and E(i-1,j)
-                    // set H(i,j-1) for the next row
-                    hs[j][process_batch_id] = h1s[process_batch_id];
-                    int tmpM = Ms[process_batch_id] ;
-                    tmpM = tmpM? tmpM + q_rev[process_batch_id+j*PROCESSBATCH] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
-                    Ms[process_batch_id] = tmpM;
-                    
-                    local_hs[process_batch_id] = Ms[process_batch_id] > local_es[process_batch_id]? Ms[process_batch_id] : local_es[process_batch_id];   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
-                    local_hs[process_batch_id] = local_hs[process_batch_id] > fs[process_batch_id]? local_hs[process_batch_id] : fs[process_batch_id];
-  
-                    
-                    h1s[process_batch_id] = local_hs[process_batch_id];             // save H(i,j) to h1 for the next column
-                    mjs[process_batch_id] = ms[process_batch_id] > local_hs[process_batch_id]?  mjs[process_batch_id] : j; // record the position where max score is achieved
-                    ms[process_batch_id] = ms[process_batch_id] > local_hs[process_batch_id]? ms[process_batch_id] : local_hs[process_batch_id];   // m is stored at eh[mj+1]
-                    
-                    ts[process_batch_id] = Ms[process_batch_id] - oe_del;
-                    ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
-                    local_es[process_batch_id] -= e_del;
-                    local_es[process_batch_id] = local_es[process_batch_id] > ts[process_batch_id]? local_es[process_batch_id] : ts[process_batch_id];   // computed E(i+1,j
-                    
-                    es[j][process_batch_id]= local_es[process_batch_id];           // save E(i+1,j) for the next row
-                    
-                    //saturation
-                    ts[process_batch_id] = Ms[process_batch_id] - oe_ins;
-                    ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
-                    
-                    fs[process_batch_id] -= e_ins;
-                    //condition+1
-                    fs[process_batch_id] = fs[process_batch_id] > ts[process_batch_id]? fs[process_batch_id] : ts[process_batch_id];   // computed F(i,j+1)
-
-                    //condition+3
-                    //redo unnecessary data
-                    h_ls[process_batch_id]=j<ends[process_batch_id]?h1s[process_batch_id]:h_ls[process_batch_id];
-                    m_ls[process_batch_id]=j<ends[process_batch_id]?ms[process_batch_id]: m_ls[process_batch_id];
-                    mj_ls[process_batch_id]=j<ends[process_batch_id]?mjs[process_batch_id]:mj_ls[process_batch_id];
-                }
-                
-                h1s[process_batch_id]=h_ls[process_batch_id];
-                ms[process_batch_id]= m_ls[process_batch_id];
-                mjs[process_batch_id]=mj_ls[process_batch_id];
-                
-                //redo unneccesary search
-                h1s[process_batch_id]=i<tlens[process_batch_id]?h1s[process_batch_id]:0;
-                
-                hs[j][process_batch_id] = h1s[process_batch_id];
-                es[ends[process_batch_id]][process_batch_id] = 0;
-                j=j<ends[process_batch_id]?j:ends[process_batch_id];
-                
-             //   fprintf(stderr, "correct max_ie/gscore before :%d/%d\n",max_ies[process_batch_id], gscores[process_batch_id] );
-                if (j == qlens[process_batch_id]&&gscores[process_batch_id] <= h1s[process_batch_id]) {
-                    max_ies[process_batch_id] = i;
-                    gscores[process_batch_id] =  h1s[process_batch_id];
-                }
-              //  fprintf(stderr, "correct max_ie/gscore after :%d/%d\n",max_ies[process_batch_id],gscores[process_batch_id] );
-            
-            }
-        //    show("pre ms is", buffer, v_m);
+                    //    show("pre ms is", buffer, v_m);
             _mm_store_si128((__m128i*) gscores, v_gscore);
             _mm_store_si128((__m128i*) max_ies, v_max_ie);
             _mm_store_si128((__m128i*) ms, v_m);
@@ -925,25 +827,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             }
             if(flag==0)
                 break_flag=1;
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-            {
-                if (ms[process_batch_id] > maxs[process_batch_id]) {
-                    maxs[process_batch_id] = ms[process_batch_id];
-                    max_is[process_batch_id] = i;
-                    max_js[process_batch_id] =  mjs[process_batch_id];
-                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
-                } else if (zdrop > 0) {
-                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
-                        //if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del <= zdrop) flag=1;
-                    } else {
-                        //if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins <= zdrop) flag=1;
-                    }
-                }
-            }
-            if(flag==0)
-                break_flag=1;
+           
             
             //m==0 break
             uint8_t break_flag2 = 0;
@@ -960,49 +844,90 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 }
                 ERR_NEXTLINE;
             }
-           // fprintf(stderr, "%d/%d\n",break_flag2,break_flag);
+
             assert(break_flag==break_flag2);
-//            cond = _mm_cmpgt_epi16(v_m, v_max);// if (ms[process_batch_id] > maxs[process_batch_id])
-//            cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-//            // maxs[process_batch_id] = ms[process_batch_id];
-//            (tmp_out_true)=_mm_and_ps(cond,v_m);
-//            (tmp_out_false)=_mm_andnot_ps(cond,v_max);
-//            v_max = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//            // max_is[process_batch_id] = i;
-//            (tmp_out_true)=_mm_and_ps(cond,v_i);
-//            (tmp_out_false)=_mm_andnot_ps(cond,v_max_i);
-//            v_max_i = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//            // max_js[process_batch_id] =  mjs[process_batch_id];
-//            (tmp_out_true)=_mm_and_ps(cond,v_mj);
-//            (tmp_out_false)=_mm_andnot_ps(cond,v_max_j);
-//            v_max_j = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//            //max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
-//            __m128i v_tmp_maxoff = _mm_abs_epi16( _mm_subs_epi16(v_mj, v_i));
-//            v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
-//            (tmp_out_true)=_mm_and_ps(cond,v_tmp_maxoff);
-//            (tmp_out_false)=_mm_andnot_ps(cond,v_max_off);
-//            v_max_off = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-//            
-//            
-//            _mm_store_si128((__m128i*)buffer, v_max);
-//            for(int process_batch_id=0; process_batch_id<8;process_batch_id++)
-//            {
-//                assert(maxs[process_batch_id]==buffer[process_batch_id]);
-//            }
-//            
-//            _mm_store_si128((__m128i*)buffer, v_max_i);
-//            for(int process_batch_id=0; process_batch_id<8;process_batch_id++)
-//            {
-//                assert(max_is[process_batch_id]==buffer[process_batch_id]);
-//            }
-//            
-//            _mm_store_si128((__m128i*)buffer, v_max_j);
-//            for(int process_batch_id=0; process_batch_id<8;process_batch_id++)
-//            {
-//                assert(max_js[process_batch_id]==buffer[process_batch_id]);
-//            }
+            flag=1;
+            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+            {
+                
+                if (ms[process_batch_id] > maxs[process_batch_id]) {
+                    maxs[process_batch_id] = ms[process_batch_id];
+                    max_is[process_batch_id] = i;
+                    max_js[process_batch_id] =  mjs[process_batch_id];
+                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
+                } else if (zdrop > 0) {
+                    flag=0;
+                    
+                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
+                        //if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del < zdrop) flag=1;
+                    } else {
+                        //if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins < zdrop) flag=1;
+                    }
+                }
+            }
+            if(flag==0)
+                break_flag=1;
             
+           // fprintf(stderr, "%d/%d\n",break_flag2,break_flag);
             
+            cond = _mm_cmpgt_epi16(v_m, v_max);// if (ms[process_batch_id] > maxs[process_batch_id])
+            cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+            // maxs[process_batch_id] = ms[process_batch_id];
+            (tmp_out_true)=_mm_and_ps(cond,v_m);
+            (tmp_out_false)=_mm_andnot_ps(cond,v_max);
+            v_max = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+            // max_is[process_batch_id] = i;
+            (tmp_out_true)=_mm_and_ps(cond,v_i);
+            (tmp_out_false)=_mm_andnot_ps(cond,v_max_i);
+            v_max_i = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+            // max_js[process_batch_id] =  mjs[process_batch_id];
+            (tmp_out_true)=_mm_and_ps(cond,v_mj);
+            (tmp_out_false)=_mm_andnot_ps(cond,v_max_j);
+            v_max_j = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+            //max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
+            __m128i v_tmp_maxoff = _mm_abs_epi16( _mm_subs_epi16(v_mj, v_i));
+            v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
+            (tmp_out_true)=_mm_and_ps(cond,v_tmp_maxoff);
+            (tmp_out_false)=_mm_andnot_ps(cond,v_max_off);
+            v_max_off = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+            flag=1;
+            
+            //serial code
+            if(zdrop>0&&!_mm_movemask_epi8(cond))//all false
+            {
+                flag=0;
+                
+                int16_t max_is[8],mjs[8],max_js[8],maxs[8],ms[8];
+                _mm_store_si128((__m128i*)max_is, v_max_i);
+                _mm_store_si128((__m128i*)mjs, v_mj);
+                _mm_store_si128((__m128i*)max_js, v_max_j);
+                _mm_store_si128((__m128i*)maxs, v_max);
+                _mm_store_si128((__m128i*)ms, v_m);
+                
+                for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+                {
+                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
+                        //if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del < zdrop) flag=1;
+                    } else {
+                        //if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins < zdrop) flag=1;
+                    }
+                }
+            }
+    
+            if(flag==0)
+                break_flag2=1;
+            assert(break_flag2==break_flag);
+            for(int i =0; i<que_align; i++)
+            {
+                _mm_store_si128(hs[i], v_hs[i]);
+                _mm_store_si128(es[i], v_es[i]);
+            }
+            _mm_store_si128(begs, v_beg);
+            _mm_store_si128(ends, v_end);
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 int16_t j;
@@ -1022,6 +947,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 //                    end = j + 2 < qlen? j + 2 : qlen;
                 //beg = 0; end = qlen; // uncomment this line for debugging
             }
+            
+            
             v_beg = _mm_load_si128((__m128i*)begs);
             v_end = _mm_load_si128((__m128i*)ends);
             
