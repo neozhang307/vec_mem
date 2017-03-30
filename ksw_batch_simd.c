@@ -493,12 +493,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
            
             assert( h0s[process_batch_id] >= 0);
         }
-//        _mm_store_si128((__m128i*)buffer,v_h0);
-//        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-//        {
-//            assert(h0s[process_batch_id]==buffer[process_batch_id]);
-//        }
-        
+
         uint16_t **es=malloc(sizeof(uint16_t*)*(que_align + 1));
         uint16_t **hs=malloc(sizeof(uint16_t*)*(que_align + 1));
         for(int i=0; i<que_align+1;i++)
@@ -569,9 +564,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
         v_gscore =_mm_set1_epi16(-1);
         v_max_off = _mm_set1_epi32(0);
         /************************/
-        int16_t ts[8], fs[8] , h1s[8], ms[8], mjs[8];
-        int16_t h_ls[8], m_ls[8], mj_ls[8];
-        int16_t min_beg, max_end;
+        int16_t  ms[8], mjs[8];
         /***********new*************/
         //reducable
         __m128i v_t, v_f, v_h1, v_m, v_mj;
@@ -588,36 +581,20 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
         /**********new**************/
         v_beg = _mm_set1_epi32(0);
         v_end = v_qlen;
-        //CBUF(v_end, ends);
         
         /************************/
         //MAIN SW
         uint8_t break_flag = 0;
 #define LOOP 2
         for (int16_t i = 0; LIKELY(i < maxtlen) && break_flag==0; ++i) {
-            min_beg = begs[0];
-            max_end = ends[0];
-            for(int i=1; i<8; i++){
-                int16_t tbeg = begs[i];
-                int16_t tend = ends[i];
-                min_beg = min_beg<tbeg?min_beg:tbeg;
-                max_end = max_end>tend?max_end:tend;
-            }
             __m128i cond,cond2;
-            __m128i truecase,falsecase,out,tmp_h,tmp_l,tmp_flag;
+            __m128i truecase,falsecase,tmp_h,tmp_l,tmp_flag;
             __m128 tmp_out_true,tmp_out_false;
             
             __m128i tmplen = v_beg;
             __min_8(min_beg2, tmplen);
              tmplen = v_end;
             __max_8(max_end2, tmplen);
-            if(i==0)
-            {
-             //   fprintf(stderr,"beg-mine/correct: %d/%d\n",min_beg2,min_beg);
-            //    fprintf(stderr,"end-mine/correct: %d/%d\n",max_end2,max_end);
-                assert(min_beg==min_beg2);
-                assert(max_end==max_end2);
-            }
             /***********keep***********/
             uint8_t t_targets[8];
             memcpy(t_targets,target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*8,8*sizeof(uint8_t));
@@ -656,9 +633,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 __m128i v_M;
                 __m128i v_h;
                 __m128i v_e;
-               // __m128i v_qp;
-               // __m128i v_flag;
-                
                 
                 //processing a row
                     
@@ -768,15 +742,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 v_es[j]=v_zero;
                 
                 v_j = _mm_min_epi16(v_j, v_end);
-                
                 cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change
-       //         show("cond ie before: ", buffer, cond);
-                // when true potentially change
                 cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-         //       show("v_gscore ie before: ", buffer, v_gscore);
-         //       show("v_h1 ie before: ", buffer, v_h1);
                 cond2 = _mm_cmpgt_epi16(v_gscore, v_h1);// when false no change//v_gscore<v_h1
-          //      show("cond2 ie before: ", buffer, cond2);
                 // when true potentially change
                 
                 cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
@@ -790,10 +758,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 (tmp_out_true)=_mm_and_ps(cond,v_h1);
                 (tmp_out_false)=_mm_andnot_ps(cond,v_gscore);
                 v_gscore = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-           //     show("v_max ie after: ", buffer, v_max_ie);
-           //     show("v_gscore ie after: ", buffer, v_gscore);
             }
-                    //    show("pre ms is", buffer, v_m);
             _mm_store_si128((__m128i*) gscores, v_gscore);
             _mm_store_si128((__m128i*) max_ies, v_max_ie);
             _mm_store_si128((__m128i*) ms, v_m);
@@ -845,8 +810,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             {
                 flag=0;
                 
-                //int16_t max_is[8],mjs[8],max_js[8],maxs[8],ms[8];
-
                 
                 for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
                 {
@@ -860,27 +823,79 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 }
             }
     
+            __m128i v_beg2,v_end2;
+            __m128i v_tmp;
+            int16_t min_beg, max_beg, min_end, max_end;
             if(flag==0)
                 break_flag=1;
             for(int i =0; i<que_align; i++)
             {
-                _mm_store_si128(hs[i], v_hs[i]);
-                _mm_store_si128(es[i], v_es[i]);
+                _mm_store_si128((__m128i*)hs[i], v_hs[i]);
+                _mm_store_si128((__m128i*)es[i], v_es[i]);
             }
-            _mm_store_si128(begs, v_beg);
-            _mm_store_si128(ends, v_end);
+            _mm_store_si128((__m128i*)begs, v_beg);
+            _mm_store_si128((__m128i*)ends, v_end);
+           // int16_t j;
+            
+//            v_beg2 = _mm_load_si128((__m128i*)begs);
+//            v_end2 = _mm_load_si128((__m128i*)ends);
+//            v_tmp = v_beg2;
+//            __min_8(min_beg,v_tmp);
+//            v_tmp = v_beg2;
+//            __max_8(max_beg,v_tmp);
+//            v_tmp = v_end2;
+//            __min_8(min_end,v_tmp);
+//            v_tmp = v_end2;
+//            __max_8(max_end,v_tmp);
+//            
+//            for(j=min_beg; LIKELY(j<min_end); j++)
+//            {
+//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
+//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
+//            }
+//             min_beg = j;
+//            for(; LIKELY(j<min_end); j++)
+//            {
+//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//all zero break
+//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//all zero break
+//            }
+//             max_beg = j;
+//            
+//            for(j=max_end; LIKELY(j>max_beg); j--)
+//            {
+//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
+//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
+//            }
+//            max_end = j;
+//            for(;LIKELY(j>max_beg); j--)
+//            {
+//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//any one not zero break
+//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//any one not zero break
+//            }
+//            min_end = j;
+            
+            int16_t t_js[8];
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 int16_t j;
-                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) && hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0; ++j);
+                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) ; ++j)
+                {
+
+                    if(hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
+                    break;
+                }
                 begs[process_batch_id]=j;
-                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) && hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0; --j);
+                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) ; --j)
+                {
+
+                    if( hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
+                    break;
+                }
                 ends[process_batch_id] = j + 2 < qlens[process_batch_id]? j + 2 : qlens[process_batch_id];
             }
-            
-            
             v_beg = _mm_load_si128((__m128i*)begs);
             v_end = _mm_load_si128((__m128i*)ends);
+
             
         }
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
@@ -895,8 +910,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
         }
         for(int i=0; i<que_align+1;i++)
         {
-            free(es[i]);//=calloc(sizeof(eh_m)*8,1);
-            free(hs[i]);//=calloc(sizeof(eh_m)*8,1);
+            free(es[i]);
+            free(hs[i]);
         }
         free(hs);
         free(es);
