@@ -2209,6 +2209,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     }
     //SW
     kstring_t str={0,0,0};
+#ifdef DBUGSW
     if(tid == 0&&start == 8000)
     {
     kputs("sw_start_",&str);
@@ -2220,6 +2221,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     kputs(".bin",&str);
     store(g_srt,batch_id[batch],str.s);
     }
+#endif
 //    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
 //    store_config();
 //    load_config();
@@ -2236,6 +2238,8 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
 //        }
 //    }
 //
+//
+#ifdef DEBUGSW
     if(tid == 0&&start == 8000)
     {
     free(str.s);
@@ -2252,6 +2256,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     store(g_srt,batch_id[batch],str.s);
     free(str.s);
     }
+#endif
     //finalize
     for(int i=0; i<batch; i++)
     {
