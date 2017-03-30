@@ -828,73 +828,77 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             int16_t min_beg, max_beg, min_end, max_end;
             if(flag==0)
                 break_flag=1;
-            for(int i =0; i<que_align; i++)
-            {
-                _mm_store_si128((__m128i*)hs[i], v_hs[i]);
-                _mm_store_si128((__m128i*)es[i], v_es[i]);
-            }
-            _mm_store_si128((__m128i*)begs, v_beg);
-            _mm_store_si128((__m128i*)ends, v_end);
+//            for(int i =0; i<que_align; i++)
+//            {
+//                _mm_store_si128((__m128i*)hs[i], v_hs[i]);
+//                _mm_store_si128((__m128i*)es[i], v_es[i]);
+//            }
+//            _mm_store_si128((__m128i*)begs, v_beg);
+//            _mm_store_si128((__m128i*)ends, v_end);
            // int16_t j;
             
-//            v_beg2 = _mm_load_si128((__m128i*)begs);
-//            v_end2 = _mm_load_si128((__m128i*)ends);
-//            v_tmp = v_beg2;
-//            __min_8(min_beg,v_tmp);
-//            v_tmp = v_beg2;
-//            __max_8(max_beg,v_tmp);
-//            v_tmp = v_end2;
-//            __min_8(min_end,v_tmp);
-//            v_tmp = v_end2;
-//            __max_8(max_end,v_tmp);
-//            
-//            for(j=min_beg; LIKELY(j<min_end); j++)
-//            {
-//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
-//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
-//            }
-//             min_beg = j;
-//            for(; LIKELY(j<min_end); j++)
-//            {
-//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//all zero break
-//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//all zero break
-//            }
-//             max_beg = j;
-//            
-//            for(j=max_end; LIKELY(j>max_beg); j--)
-//            {
-//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
-//                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
-//            }
-//            max_end = j;
-//            for(;LIKELY(j>max_beg); j--)
-//            {
-//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//any one not zero break
-//                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//any one not zero break
-//            }
-//            min_end = j;
+            v_beg2 = _mm_load_si128((__m128i*)begs);
+            v_end2 = _mm_load_si128((__m128i*)ends);
+            v_tmp = v_beg2;
+            __min_8(min_beg,v_tmp);
+            v_tmp = v_beg2;
+            __max_8(max_beg,v_tmp);
+            v_tmp = v_end2;
+            __min_8(min_end,v_tmp);
+            v_tmp = v_end2;
+            __max_8(max_end,v_tmp);
             
-            int16_t t_js[8];
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+            
+            
+            for(j=min_beg; LIKELY(j<min_end); j++)
             {
-                int16_t j;
-                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) ; ++j)
-                {
-
-                    if(hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
-                    break;
-                }
-                begs[process_batch_id]=j;
-                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) ; --j)
-                {
-
-                    if( hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
-                    break;
-                }
-                ends[process_batch_id] = j + 2 < qlens[process_batch_id]? j + 2 : qlens[process_batch_id];
+                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
+                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
             }
-            v_beg = _mm_load_si128((__m128i*)begs);
-            v_end = _mm_load_si128((__m128i*)ends);
+             min_beg = j;
+            for(; LIKELY(j<min_end); j++)
+            {
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//all not zero break
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//all not zero break
+            }
+             max_beg = j;
+            
+            for(j=max_end; LIKELY(j>max_beg); j--)
+            {
+                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
+                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
+            }
+            max_end = j;
+            for(;LIKELY(j>max_beg); j--)
+            {
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//all not zero break
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//all not zero break
+            }
+            min_end = j;
+            
+            v_tmp = _mm_set1_epi16(max_end+2);
+            
+//            int16_t t_js[8];
+//            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+//            {
+//                int16_t j;
+//                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) ; ++j)
+//                {
+//
+//                    if(hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
+//                    break;
+//                }
+//                begs[process_batch_id]=j;
+//                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) ; --j)
+//                {
+//
+//                    if( hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
+//                    break;
+//                }
+//                ends[process_batch_id] = j + 2 < qlens[process_batch_id]? j + 2 : qlens[process_batch_id];
+//            }
+            v_beg = _mm_set1_epi16(min_beg);//_mm_load_si128((__m128i*)begs);
+            v_end = _mm_min_epi16(v_tmp, v_qlen);//_mm_load_si128((__m128i*)ends);
 
             
         }
