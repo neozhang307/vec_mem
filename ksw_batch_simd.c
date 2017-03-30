@@ -561,17 +561,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
         v_qlen=_mm_load_si128((__m128i*)qlens);
         v_tlen=_mm_load_si128((__m128i*)tlens);
         /************************/
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-        {
-            int batch_idx = process_batch_id + grid_process_batch_idx*8;
-          //  h0s[process_batch_id]=g_h0[batch_idx];
-            maxs[process_batch_id]=h0s[process_batch_id];
-            max_is[process_batch_id]=-1;
-            max_js[process_batch_id]=-1;
-            max_ies[process_batch_id]=-1;
-            gscores[process_batch_id]=-1;
-            max_offs[process_batch_id]=0;
-        }
         /***********new*************/
         v_max = v_h0;
         v_max_i =_mm_set1_epi16(-1);
@@ -647,12 +636,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             /***********************/
             uint16_t j;
             {
-//                fs[process_batch_id]=0;
-//                ms[process_batch_id]=0;
-//                mjs[process_batch_id]=-1;
-//                h_ls[process_batch_id]=0;
-//                m_ls[process_batch_id]=0;
-//                mj_ls[process_batch_id]=0;
+
                 //init
                 v_f = v_zero;
                 v_m = v_zero;
@@ -668,15 +652,12 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                     v_h1 = _mm_subs_epu16(v_h0,tval);
                 } else v_h1=v_zero;
                 
-//                int16_t Ms[8];
-//                int16_t local_hs[8];
-//                int16_t local_es[8];
                 //new reducable***********
                 __m128i v_M;
                 __m128i v_h;
                 __m128i v_e;
-                __m128i v_qp;
-                __m128i v_flag;
+               // __m128i v_qp;
+               // __m128i v_flag;
                 
                 
                 //processing a row
@@ -819,56 +800,14 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             _mm_store_si128((__m128i*) mjs, v_mj);
                 //if the search should terminated earlier?
             uint8_t flag = 0;
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-            {
-                // if (ms[process_batch_id] == 0) break;
-                if(ms[process_batch_id]!=0)
-                    flag=1;
-            }
-            if(flag==0)
-                break_flag=1;
-           
             
             //m==0 break
-            uint8_t break_flag2 = 0;
+           
             if(!_mm_movemask_epi8(_mm_cmpneq_pd((__m128)v_m, (__m128)v_zero)))
             {
-                break_flag2=1;//when all equal to zero, break;
+                break_flag=1;//when all equal to zero, break;
             }
-            if(break_flag!=break_flag2)
-            {
-                show("v_ms is", buffer, v_m);
-                for(int i=0; i<8; i++)
-                {
-                    fprintf(stderr, "%d ", ms[i]);
-                }
-                ERR_NEXTLINE;
-            }
-
-            assert(break_flag==break_flag2);
-            flag=1;
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-            {
-                
-                if (ms[process_batch_id] > maxs[process_batch_id]) {
-                    maxs[process_batch_id] = ms[process_batch_id];
-                    max_is[process_batch_id] = i;
-                    max_js[process_batch_id] =  mjs[process_batch_id];
-                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
-                } else if (zdrop > 0) {
-                    flag=0;
-                    
-                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
-                        //if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del < zdrop) flag=1;
-                    } else {
-                        //if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins < zdrop) flag=1;
-                    }
-                }
-            }
-            if(flag==0)
-                break_flag=1;
+            
             
            // fprintf(stderr, "%d/%d\n",break_flag2,break_flag);
             
@@ -894,17 +833,20 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             v_max_off = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
             flag=1;
             
+            
+            _mm_store_si128((__m128i*)max_is, v_max_i);
+            _mm_store_si128((__m128i*)mjs, v_mj);
+            _mm_store_si128((__m128i*)max_js, v_max_j);
+            _mm_store_si128((__m128i*)maxs, v_max);
+            _mm_store_si128((__m128i*)ms, v_m);
+            _mm_store_si128((__m128i*)max_offs , v_max_off);
             //serial code
             if(zdrop>0&&!_mm_movemask_epi8(cond))//all false
             {
                 flag=0;
                 
-                int16_t max_is[8],mjs[8],max_js[8],maxs[8],ms[8];
-                _mm_store_si128((__m128i*)max_is, v_max_i);
-                _mm_store_si128((__m128i*)mjs, v_mj);
-                _mm_store_si128((__m128i*)max_js, v_max_j);
-                _mm_store_si128((__m128i*)maxs, v_max);
-                _mm_store_si128((__m128i*)ms, v_m);
+                //int16_t max_is[8],mjs[8],max_js[8],maxs[8],ms[8];
+
                 
                 for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
                 {
@@ -919,8 +861,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             }
     
             if(flag==0)
-                break_flag2=1;
-            assert(break_flag2==break_flag);
+                break_flag=1;
             for(int i =0; i<que_align; i++)
             {
                 _mm_store_si128(hs[i], v_hs[i]);
@@ -932,38 +873,14 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             {
                 int16_t j;
                 for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) && hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0; ++j);
-//                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) && ehs[j][process_batch_id].h == 0 && ehs[j][process_batch_id].e == 0; ++j);
-
                 begs[process_batch_id]=j;
                 for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) && hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0; --j);
-//                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) && ehs[j][process_batch_id].h == 0 && ehs[j][process_batch_id].e == 0; --j);
-
                 ends[process_batch_id] = j + 2 < qlens[process_batch_id]? j + 2 : qlens[process_batch_id];
-                //  fprintf(stderr,"zdrop is %d\n",zdrop);
-                // update beg and end for the next round
-                //                    for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
-                //                    beg = j;
-                //                    for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
-                //                    end = j + 2 < qlen? j + 2 : qlen;
-                //beg = 0; end = qlen; // uncomment this line for debugging
             }
             
             
             v_beg = _mm_load_si128((__m128i*)begs);
             v_end = _mm_load_si128((__m128i*)ends);
-            
-            _mm_store_si128((__m128i*)buffer, v_gscore);
-            for(int process_batch_id=0; process_batch_id<8;process_batch_id++)
-            {
-              //  fprintf(stderr,"i/j %d/%d mine/correct = %d/%d\n",i,j,buffer[process_batch_id],gscores[process_batch_id]);
-                if(gscores[process_batch_id]!=buffer[process_batch_id])
-                {
-                    for(int i=0; i<8; i++)
-                        fprintf(stderr,"%d/%d ",buffer[i],gscores[i]);
-                }
-                assert(gscores[process_batch_id]==buffer[process_batch_id]);
-            }
-            
             
         }
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
