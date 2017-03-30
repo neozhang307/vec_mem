@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <emmintrin.h>
+#include <tmmintrin.h>
 #include<stdio.h>
 #include<string.h>
 
@@ -613,6 +614,10 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 min_beg = min_beg<tbeg?min_beg:tbeg;
                 max_end = max_end>tend?max_end:tend;
             }
+            __m128i cond,cond2;
+            __m128i truecase,falsecase,out,tmp_h,tmp_l,tmp_flag;
+            __m128 tmp_out_true,tmp_out_false;
+            
             __m128i tmplen = v_beg;
             __min_8(min_beg2, tmplen);
              tmplen = v_end;
@@ -638,6 +643,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 
             }
             transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+             __m128i v_i = _mm_set1_epi16(i);
             /***********************/
             uint16_t j;
             {
@@ -672,12 +678,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 __m128i v_qp;
                 __m128i v_flag;
                 
-                __m128i cond,cond2,truecase,falsecase,out,tmp_h,tmp_l,tmp_flag;
-                __m128 tmp_out_true,tmp_out_false;
+                
                 //processing a row
                     
                 __m128i v_j = v_zero;
-                __m128i v_i = _mm_set1_epi16(i);
+               
                 //processing a row
                // for (j =  0; LIKELY(j < LOOP); ++j)
                 for (j =  min_beg2; LIKELY(j < max_end2); ++j)
@@ -799,8 +804,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 
                 (tmp_out_true)=_mm_and_ps(cond,v_i);
                 (tmp_out_false)=_mm_andnot_ps(cond,v_max_ie);
-          //      show("v_max ie before: ", buffer, v_max_ie);
-          //      show("v_gscore ie before: ", buffer, v_gscore);
                 v_max_ie = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
                 
                 (tmp_out_true)=_mm_and_ps(cond,v_h1);
@@ -907,35 +910,27 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
               //  fprintf(stderr, "correct max_ie/gscore after :%d/%d\n",max_ies[process_batch_id],gscores[process_batch_id] );
             
             }
-            
+        //    show("pre ms is", buffer, v_m);
             _mm_store_si128((__m128i*) gscores, v_gscore);
             _mm_store_si128((__m128i*) max_ies, v_max_ie);
             _mm_store_si128((__m128i*) ms, v_m);
-         //   show("gscore ", buffer, v_gscore);
-            _mm_store_si128((__m128i*)buffer, v_max_ie);
-            for(int i=0; i<8; i++)
-            {
-                if(!(max_ies[i]==buffer[i]))
-                {
-                    fprintf(stderr,"max ie: ");
-                    for(int i=0; i<8; i++)
-                    {
-                        fprintf(stderr,"%d/%d ", buffer[i],max_ies[i]);
-                    }
-                    ERR_NEXTLINE;
-                }
-                assert(max_ies[i]==buffer[i]);
-            }
-            
-                        //if the search should terminated earlier?
+            _mm_store_si128((__m128i*) mjs, v_mj);
+                //if the search should terminated earlier?
             uint8_t flag = 0;
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
                 // if (ms[process_batch_id] == 0) break;
                 if(ms[process_batch_id]!=0)
                     flag=1;
+            }
+            if(flag==0)
+                break_flag=1;
+            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
+            {
                 if (ms[process_batch_id] > maxs[process_batch_id]) {
-                    maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
+                    maxs[process_batch_id] = ms[process_batch_id];
+                    max_is[process_batch_id] = i;
+                    max_js[process_batch_id] =  mjs[process_batch_id];
                     max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
                 } else if (zdrop > 0) {
                     if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
@@ -947,9 +942,66 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                     }
                 }
             }
-
             if(flag==0)
                 break_flag=1;
+            
+            //m==0 break
+            uint8_t break_flag2 = 0;
+            if(!_mm_movemask_epi8(_mm_cmpneq_pd((__m128)v_m, (__m128)v_zero)))
+            {
+                break_flag2=1;//when all equal to zero, break;
+            }
+            if(break_flag!=break_flag2)
+            {
+                show("v_ms is", buffer, v_m);
+                for(int i=0; i<8; i++)
+                {
+                    fprintf(stderr, "%d ", ms[i]);
+                }
+                ERR_NEXTLINE;
+            }
+           // fprintf(stderr, "%d/%d\n",break_flag2,break_flag);
+            assert(break_flag==break_flag2);
+//            cond = _mm_cmpgt_epi16(v_m, v_max);// if (ms[process_batch_id] > maxs[process_batch_id])
+//            cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+//            // maxs[process_batch_id] = ms[process_batch_id];
+//            (tmp_out_true)=_mm_and_ps(cond,v_m);
+//            (tmp_out_false)=_mm_andnot_ps(cond,v_max);
+//            v_max = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+//            // max_is[process_batch_id] = i;
+//            (tmp_out_true)=_mm_and_ps(cond,v_i);
+//            (tmp_out_false)=_mm_andnot_ps(cond,v_max_i);
+//            v_max_i = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+//            // max_js[process_batch_id] =  mjs[process_batch_id];
+//            (tmp_out_true)=_mm_and_ps(cond,v_mj);
+//            (tmp_out_false)=_mm_andnot_ps(cond,v_max_j);
+//            v_max_j = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+//            //max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
+//            __m128i v_tmp_maxoff = _mm_abs_epi16( _mm_subs_epi16(v_mj, v_i));
+//            v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
+//            (tmp_out_true)=_mm_and_ps(cond,v_tmp_maxoff);
+//            (tmp_out_false)=_mm_andnot_ps(cond,v_max_off);
+//            v_max_off = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+//            
+//            
+//            _mm_store_si128((__m128i*)buffer, v_max);
+//            for(int process_batch_id=0; process_batch_id<8;process_batch_id++)
+//            {
+//                assert(maxs[process_batch_id]==buffer[process_batch_id]);
+//            }
+//            
+//            _mm_store_si128((__m128i*)buffer, v_max_i);
+//            for(int process_batch_id=0; process_batch_id<8;process_batch_id++)
+//            {
+//                assert(max_is[process_batch_id]==buffer[process_batch_id]);
+//            }
+//            
+//            _mm_store_si128((__m128i*)buffer, v_max_j);
+//            for(int process_batch_id=0; process_batch_id<8;process_batch_id++)
+//            {
+//                assert(max_js[process_batch_id]==buffer[process_batch_id]);
+//            }
+            
             
             for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
             {
