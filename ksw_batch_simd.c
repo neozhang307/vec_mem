@@ -545,7 +545,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         for (int16_t i = 0; LIKELY(i < maxtlen) ; ++i) {
             __m128i v_tmp1;
             __m128i cond,cond2;
-            __m128i truecase,falsecase,tmp_h,tmp_l;
+            __m128i truecase,falsecase;
             __m128i tmp_out_true,tmp_out_false;
             
             __m128i tmplen = v_end;
