@@ -482,7 +482,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 //        {
 //            
 //        }
-        assert(_mm_movemask_epi8(_mm_cmplt_ps((__m128)v_h0, (__m128)v_zero))==0);//all v_h0 > 0
+        assert(_mm_movemask_epi8(_mm_cmplt_epi16((__m128)v_h0, (__m128)v_zero))==0);//all v_h0 > 0
         __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         
@@ -494,7 +494,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             
             v_tmp = _mm_subs_epu16(v_tmp, v_e_ins);
             
-            if(!_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_tmp, (__m128)v_zero)))
+            if(!_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_tmp, (__m128)v_zero)))
             {
                 break;//when all equal to zero, break;
             }
@@ -687,7 +687,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             
             //m==0 break
            
-            if(!_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_m, (__m128)v_zero)))
+            if(!_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_m, (__m128)v_zero)))
             {
                 break;//break_flag=1;//when all equal to zero, break;
             }
@@ -725,8 +725,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 cond3 = _mm_cmplt_epi16(v_tmp8, v_zdrop);
                 cmp_int16flag_change(cond3, v_zero, cond3, tmp_h, tmp_l);
                
-                cond2 = _mm_and_ps(cond, cond2);
-                cond3 = _mm_andnot_ps(cond, cond3);
+                cond2 = _mm_and_si128(cond, cond2);
+                cond3 = _mm_andnot_si128(cond, cond3);
                 
                 cond = _mm_or_si128(cond2, cond3);
                 if(_mm_movemask_epi8(cond))flag=1;
@@ -741,27 +741,27 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             
             for(j=min_beg; LIKELY(j<min_end); j++)
             {
-                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
-                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
              min_beg = j;
             for(; LIKELY(j<min_end); j++)
             {
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
             }
              max_beg = j;
             
             for(j=max_end; LIKELY(j>max_beg); j--)
             {
-                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
-                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
             max_end = j;
             for(;LIKELY(j>max_beg); j--)
             {
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
             }
             min_end = j;
             v_tmp1 = _mm_set1_epi16(max_end+2);
