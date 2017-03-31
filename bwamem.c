@@ -1801,9 +1801,9 @@ typedef struct {
     smem_aux_t **aux;
     bseq1_t *seqs;
     mem_alnreg_v *regs;
-    mem_chain_v *chn;
+    mem_chain_v *chn;//to do set to thread private
     
-    qext_t* ext_val;
+    qext_t* ext_val;// to do set to thread private
     
     int64_t n_processed;
 } worker_t_mod;
@@ -2223,23 +2223,9 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     store(g_srt,batch_id[batch],str.s);
     }
 #endif
-//    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
-//    store_config();
-//    load_config();
-//    fprintf(stderr,"the check result is %d \n",check_config(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop));
-//    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+
     ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
-//    for(int i=0; i<batch_id[batch];++i)
-//    {
-//        swrst_t *sw = g_srt+i;
-//        swseq_t *seq = sw->sw_seq;
-//        if(seq->qlen!=0)
-//        {
-//            sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-//        }
-//    }
-//
-//
+
 #ifdef DEBUG_SW
     if(tid == 0&&start == 8000)
     {
