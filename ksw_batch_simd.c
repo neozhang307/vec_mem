@@ -428,6 +428,9 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
     v_e_ins = _mm_set1_epi16(e_ins);
 
 #define cmp_int16flag_change(ori_flag,v_zero,out_flag,tmp_h,tmp_l) do{\
+(out_flag) = ori_flag;\
+}while(0)
+#define cmp_int16flag_change2(ori_flag,v_zero,out_flag,tmp_h,tmp_l) do{\
 (tmp_h) = _mm_unpackhi_epi16(ori_flag, v_zero); \
 (tmp_l) = _mm_unpacklo_epi16(v_zero, ori_flag);\
 (tmp_h) = (__m128i)_mm_cmpneq_ps((__m128)tmp_h, (__m128)v_zero);\
@@ -1042,8 +1045,11 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 #include<time.h>
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 {
+#ifdef SWBATCHDB
     clock_t m_start,m_end;
+
     m_start = clock();
+#endif
     //sort
     assert(size>=0);
     uint64_t* swlen = malloc(sizeof(int64_t)*size);//should record qlen rlen
@@ -1069,8 +1075,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
+#ifdef SWBATCHDB
     fprintf(stderr,"jump from %d to %d, while total size is%d\n",none_zero,ptr,size);
-//    //sinple use sinple way
+#endif
+    //    //sinple use sinple way
     for(int i=none_zero; i<ptr; i++)
     {
         int idx = swlen[i]>>32;
@@ -1168,9 +1176,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     //reference should be reverse
     //swlen_resize size is resize
     //construct RDB;
-
+#ifdef SWBATCHDB
     clock_t start,end;
     start = clock();
+#endif
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
@@ -1181,8 +1190,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         uint8_t* db_ptr = rdb+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
         memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
     }
+#ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"ref copy time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+#endif
 #ifdef DEBUG_SW
     for(int i=0; i<resize; i++)
     {
@@ -1197,7 +1208,9 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         }
     }
 #endif
+#ifdef SWBATCHDB
     start = clock();
+#endif
     for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
     {
         packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
@@ -1207,8 +1220,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         int y = ref_hash_t->alined;
         transpose_8(db_ptr, db_rev_ptr, x, y);
     }
+#ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"ref transpose time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+#endif
  #ifdef DEBUG_SW
     {
         packed_hash_t* rdb_hash_t = &ref_hash[1*BATCHSIZE];
@@ -1227,7 +1242,9 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 #endif
     int16_t* qp_db2 = malloc(que_global_id_x*BATCHSIZE*g_m*sizeof(int16_t));//should be usingned ,change in the future
     memset(qp_db2,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*g_m);
+#ifdef SWBATCHDB
     start = clock();
+#endif
     for(int i=0; i<resize; i++)
     {
 
@@ -1254,9 +1271,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             for(;j<aligned; ++j) qp2[m++]=p[5];
         }
     }
+#ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"qp execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
-
+#endif
 //    
     
     /************************/
@@ -1276,7 +1294,9 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     uint32_t remain = resize;
     uint32_t next_process = BATCHSIZE;
     //main
+#ifdef SWBATCHDB
     start = clock();
+#endif
     for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
     {
         swlen_batch_id = swlen_resized+seg_idx* BATCHSIZE;
@@ -1339,15 +1359,17 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             swlen_nxt_id++;
         }
     }
+#ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"main execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
-
+#endif
     free(rdb);
     free(rdb_rev);
     free(swlen);
+#ifdef SWBATCHDB
     m_end = clock();
     fprintf(stderr,"total execution time:%f\n",(float)(m_end - m_start) / CLOCKS_PER_SEC);
-
+#endif
 }
 
 
