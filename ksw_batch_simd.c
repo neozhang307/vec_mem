@@ -418,31 +418,26 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 (ret) = _mm_extract_epi16((xx), 0); \
 } while (0)
     
-    int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
+  //  int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
      __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins;
     v_zero = _mm_set1_epi32(0);
     v_oe_del = _mm_set1_epi16(o_del + e_del);
     v_e_del = _mm_set1_epi16(e_del);
     v_oe_ins = _mm_set1_epi16(o_ins + e_ins);
     v_e_ins = _mm_set1_epi16(e_ins);
-    //Lingqi: below code would be process only if v_zero is already defined and set to 0
-#define cmp_process_epi(flag_,truecase,falsecase,out,tmp_h,tmp_l,tmp_flag,tmp_out_true,tmp_out_false) do{\
-(tmp_h) = _mm_unpackhi_epi16(flag_, v_zero); \
-(tmp_l) = _mm_unpacklo_epi16(v_zero, flag_);\
-(tmp_h) = (__m128i)_mm_cmpneq_ps(tmp_h, v_zero);\
-(tmp_l) = (__m128i)_mm_cmpneq_ps(tmp_l, v_zero);\
-(tmp_flag) = _mm_packs_epi16(tmp_l, tmp_h);\
-(tmp_out_true)=_mm_and_ps(tmp_flag,truecase);\
-(tmp_out_false)=_mm_andnot_ps(tmp_flag,falsecase);\
-out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
-}while(0)
-    
+
 #define cmp_int16flag_change(ori_flag,v_zero,out_flag,tmp_h,tmp_l) do{\
 (tmp_h) = _mm_unpackhi_epi16(ori_flag, v_zero); \
 (tmp_l) = _mm_unpacklo_epi16(v_zero, ori_flag);\
-(tmp_h) = (__m128i)_mm_cmpneq_ps(tmp_h, v_zero);\
-(tmp_l) = (__m128i)_mm_cmpneq_ps(tmp_l, v_zero);\
+(tmp_h) = (__m128i)_mm_cmpneq_ps((__m128)tmp_h, (__m128)v_zero);\
+(tmp_l) = (__m128i)_mm_cmpneq_ps((__m128)tmp_l, (__m128)v_zero);\
 (out_flag) = _mm_packs_epi16(tmp_l, tmp_h);\
+}while(0)
+    //input would be modified
+#define cmp_gen_result(cond,truecase,falsecase,tmp_out_true,tmp_out_false,out) do{\
+(tmp_out_true)=(__m128i)_mm_and_ps((__m128)cond,(__m128)truecase);\
+(tmp_out_false)=(__m128i)_mm_andnot_ps((__m128)cond,(__m128)falsecase);\
+out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 }while(0)
     int que_align = que_hash->alined;
     
@@ -454,7 +449,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
     int16_t* qp_buff_rev = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
     memset(qp_buff_rev,0,sizeof(int16_t)*PROCESSBATCH*que_align);
     
-    
     uint16_t qlens[8];
     uint16_t maxqlen=0;
     uint16_t tlens[8];
@@ -462,17 +456,15 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
     __m128i v_qlen, v_tlen;//no smaller
     
   
-    int16_t begs[8], ends[8];
+   // int16_t begs[8], ends[8];
     int16_t maxs[8], max_is[8], max_js[8], max_ies[8], gscores[9], max_offs[8];
     int16_t h0s[8];
     
     //inreducable
-    __m128i v_beg, v_end;
+    __m128i v_end;
     __m128i v_max, v_max_i, v_max_j, v_max_ie, v_gscore,v_max_off;
     //reducable
     __m128i v_h0 = _mm_set1_epi32(0);
-    
-    int16_t buffer[8];
     
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
@@ -482,29 +474,15 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
         const int16_t *qp_batch_nxt = qp_batch + g_m*grid_process_batch_idx*8*que_align;
         
         //process 8 query at a time for int16_t
-        /********new*******/
-        //move assert outside.
         v_h0=_mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
-        /**************/
-        
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
             h0s[process_batch_id]=g_h0[process_batch_id+grid_process_batch_idx*8];
-           
             assert( h0s[process_batch_id] >= 0);
         }
 
-        uint16_t **es=malloc(sizeof(uint16_t*)*(que_align + 1));
-        uint16_t **hs=malloc(sizeof(uint16_t*)*(que_align + 1));
-        for(int i=0; i<que_align+1;i++)
-        {
-            hs[i]=calloc(sizeof(uint16_t)*8,1);
-            es[i]=calloc(sizeof(uint16_t)*8,1);
-        }
-        /********new*******/
         __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
-        
         
         v_hs[0]=v_h0;
         v_hs[1]=_mm_subs_epu16(v_h0, v_oe_ins);
@@ -521,25 +499,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             v_hs[j]=v_tmp;
         }
         /**************/
-        
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-        {
-            hs[0][process_batch_id]=h0s[process_batch_id];
-            
-            hs[1][process_batch_id]=h0s[process_batch_id]>oe_ins?h0s[process_batch_id]-oe_ins:0;
-            
-            for (int j = 2; j <= que_align && hs[j-1][process_batch_id] > e_ins; ++j)
-                hs[j][process_batch_id] = hs[j-1][process_batch_id] - e_ins;
-        }
-//debug
-        for(int line =0; line<que_align; line++)
-        {
-            _mm_store_si128((__m128i*)buffer, v_hs[line]);
-            for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-            {
-                assert(hs[line][process_batch_id]==buffer[process_batch_id]);
-            }
-        }
+
         /*********keeep************/
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
@@ -552,11 +512,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
             maxtlen=tmp_refhash->batch_max_len;//maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
         }
-        /**********new**************/
+        
         v_qlen=_mm_load_si128((__m128i*)qlens);
         v_tlen=_mm_load_si128((__m128i*)tlens);
-        /************************/
-        /***********new*************/
         v_max = v_h0;
         v_max_i =_mm_set1_epi16(-1);
         v_max_j =_mm_set1_epi16(-1);
@@ -571,30 +529,28 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
         v_h1 = v_zero;
         //seems inreducable
         __m128i v_h_l, v_m_l, v_mj_l;
-        int16_t min_beg2, max_end2;
+        int16_t min_beg, max_beg, min_end, max_end;
          /************************/
-        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-        {
-            begs[process_batch_id]=0;
-            ends[process_batch_id]=qlens[process_batch_id];
-        }
-        /**********new**************/
-        v_beg = _mm_set1_epi32(0);
+
         v_end = v_qlen;
-        
+
+        __m128i tmplen = v_qlen;
+        min_beg = 0;
+        max_beg = 0;
+        tmplen = v_end;
+        __max_8(max_end, tmplen);
+        tmplen = v_end;
+        __max_8(min_end, tmplen);
         /************************/
         //MAIN SW
-        uint8_t break_flag = 0;
-#define LOOP 2
-        for (int16_t i = 0; LIKELY(i < maxtlen) && break_flag==0; ++i) {
+        for (int16_t i = 0; LIKELY(i < maxtlen) ; ++i) {
             __m128i cond,cond2;
-            __m128i truecase,falsecase,tmp_h,tmp_l,tmp_flag;
-            __m128 tmp_out_true,tmp_out_false;
+            __m128i truecase,falsecase,tmp_h,tmp_l;
+            __m128i tmp_out_true,tmp_out_false;
             
-            __m128i tmplen = v_beg;
-            __min_8(min_beg2, tmplen);
-             tmplen = v_end;
-            __max_8(max_end2, tmplen);
+            __m128i tmplen = v_end;
+            __max_8(max_end, tmplen);
+            //end possition should be updated
             /***********keep***********/
             uint8_t t_targets[8];
             memcpy(t_targets,target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*8,8*sizeof(uint8_t));
@@ -624,7 +580,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 
                 const  int16_t *q_rev = qp_buff_rev;
                 // compute the first column
-                if ( min_beg2 == 0) {
+                if ( min_beg == 0) {
                     __m128i tval = _mm_set1_epi16((o_del + e_del * (i + 1)));
                     v_h1 = _mm_subs_epu16(v_h0,tval);
                 } else v_h1=v_zero;
@@ -640,7 +596,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                
                 //processing a row
                // for (j =  0; LIKELY(j < LOOP); ++j)
-                for (j =  min_beg2; LIKELY(j < max_end2); ++j)
+                for (j =  min_beg; LIKELY(j < max_end); ++j)
                 {
                     v_j =_mm_set1_epi16(j);
                         // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
@@ -655,12 +611,12 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                     v_hs[j]=v_h1;
                     
                     cond =_mm_cmpeq_epi16(v_M,v_zero);
+                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
                     __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev)+j);
                     falsecase = _mm_adds_epi16(v_M, tmp_qp);
-                    cmp_process_epi(cond, v_zero, falsecase, v_M, tmp_h,tmp_l,tmp_flag,tmp_out_true,tmp_out_false);
-                    
-                    //local_hs[process_batch_id] = Ms[process_batch_id] > local_es[process_batch_id]? Ms[process_batch_id] : local_es[process_batch_id];   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
-                    
+                    cmp_gen_result(cond, v_zero, falsecase, tmp_out_true, tmp_out_false, v_M);
+                   
+                
                     v_h = _mm_max_epi16(v_M, v_e);
                     
                     v_h = _mm_max_epi16(v_h, v_f);
@@ -673,56 +629,31 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                     falsecase = v_j;
                         
                     cmp_int16flag_change(cond,v_zero,cond,tmp_h,tmp_l);
-                        
-                    (tmp_out_true)=_mm_and_ps(cond,v_mj);
-                    (tmp_out_false)=_mm_andnot_ps(cond,falsecase);
-                    v_mj =(__m128i) _mm_or_ps(tmp_out_true, tmp_out_false);
-                   // mjs[process_batch_id] = ms[process_batch_id] > local_hs[process_batch_id]?  mjs[process_batch_id] : j; // record the position where max score is achieved
-                    //_mm_store_si128((__m128i*)buffer,v_mj);
-                    //    assert(mjs[process_batch_id]==buffer[process_batch_id]);
-                        
-                    (tmp_out_true)=_mm_and_ps(cond,v_m);
-                    (tmp_out_false)=_mm_andnot_ps(cond,v_h);
-                    v_m =(__m128i) _mm_or_ps(tmp_out_true, tmp_out_false);
+                    cmp_gen_result(cond, v_mj, falsecase, tmp_out_true, tmp_out_false, v_mj);
+                    cmp_gen_result(cond, v_m, v_h, tmp_out_true, tmp_out_false, v_m);
 
                     v_t=_mm_subs_epu16(v_M, v_oe_del);
                     
-                  //  local_es[process_batch_id] -= e_del;
                     v_e = _mm_subs_epu16(v_e, v_e_del);
                     //condition+1
                     // computed E(i+1,j)
-                    cond = _mm_cmpgt_epi16(v_e, v_t);
-                    cmp_int16flag_change(cond,v_zero,cond,tmp_h,tmp_l);
-                    (tmp_out_true)=_mm_and_ps(cond,v_e);
-                    (tmp_out_false)=_mm_andnot_ps(cond,v_t);
-                    v_e = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+                    v_e = _mm_max_epi16(v_e, v_t);
                     v_es[j]=v_e;
                         
                         //saturation
                     v_t = _mm_subs_epu16(v_M, v_oe_ins);
                     v_f = _mm_subs_epu16(v_f, v_e_ins);
                     //condition+1
-                    cond = _mm_cmpgt_epi16(v_f, v_t);
-                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                    (tmp_out_true)=_mm_and_ps(cond,v_f);
-                    (tmp_out_false)=_mm_andnot_ps(cond,v_t);
-                    v_f = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                    
-//                    v_end = _mm_load_si128((__m128i*)ends);
+                    v_f = _mm_max_epi16(v_f, v_t);
+
+                    //should think about it
                     cond =_mm_cmplt_epi16(v_j, v_end);
-                    
                     //redo unneccesary search
                     cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                    (tmp_out_true)=_mm_and_ps(cond,v_h1);
-                    (tmp_out_false)=_mm_andnot_ps(cond,v_h_l);
-                    v_h_l = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                    (tmp_out_true)=_mm_and_ps(cond,v_m);
-                    (tmp_out_false)=_mm_andnot_ps(cond,v_m_l);
-                    v_m_l = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                    (tmp_out_true)=_mm_and_ps(cond,v_mj);
-                    (tmp_out_false)=_mm_andnot_ps(cond,v_mj_l);
-                    v_mj_l = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                        
+                    cmp_gen_result(cond, v_h1, v_h_l, tmp_out_true, tmp_out_false, v_h_l);
+                    cmp_gen_result(cond, v_m, v_m_l, tmp_out_true, tmp_out_false, v_m_l);
+                    cmp_gen_result(cond, v_mj, v_mj_l, tmp_out_true, tmp_out_false, v_mj_l);
+                    
                     
                 }
                 v_j =_mm_set1_epi16(j);
@@ -731,33 +662,25 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 v_mj = v_mj_l;
                 v_h1 = v_h_l;
                 
-           //         //redo unneccesary search
+           //redo unneccesary search
                 cond = _mm_cmplt_epi16(_mm_set1_epi16(i), v_tlen);
-                (tmp_out_true)=_mm_and_ps(cond,v_h1);
-                (tmp_out_false)=_mm_andnot_ps(cond,v_zero);
-                v_h1 = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                
+                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                cmp_gen_result(cond, v_h1, v_zero, tmp_out_true, tmp_out_false, v_h1);
                 
                 v_hs[j]=v_h1;
                 v_es[j]=v_zero;
                 
                 v_j = _mm_min_epi16(v_j, v_end);
-                cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change
+                cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change   j==qlen?
                 cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                cond2 = _mm_cmpgt_epi16(v_gscore, v_h1);// when false no change//v_gscore<v_h1
+                cond2 = _mm_cmpgt_epi16(v_gscore, v_h1);// when false no change//v_gscore<v_h1?
                 // when true potentially change
-                
                 cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
                 
                 cond = _mm_andnot_ps(cond2, cond);
-                
-                (tmp_out_true)=_mm_and_ps(cond,v_i);
-                (tmp_out_false)=_mm_andnot_ps(cond,v_max_ie);
-                v_max_ie = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-                
-                (tmp_out_true)=_mm_and_ps(cond,v_h1);
-                (tmp_out_false)=_mm_andnot_ps(cond,v_gscore);
-                v_gscore = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+    
+                cmp_gen_result(cond, v_i, v_max_ie, tmp_out_true, tmp_out_false, v_max_ie);
+                cmp_gen_result(cond, v_h1, v_gscore, tmp_out_true, tmp_out_false, v_gscore);
             }
             _mm_store_si128((__m128i*) gscores, v_gscore);
             _mm_store_si128((__m128i*) max_ies, v_max_ie);
@@ -770,32 +693,19 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
            
             if(!_mm_movemask_epi8(_mm_cmpneq_pd((__m128)v_m, (__m128)v_zero)))
             {
-                break_flag=1;//when all equal to zero, break;
+                break;//break_flag=1;//when all equal to zero, break;
             }
-            
-            
-           // fprintf(stderr, "%d/%d\n",break_flag2,break_flag);
             
             cond = _mm_cmpgt_epi16(v_m, v_max);// if (ms[process_batch_id] > maxs[process_batch_id])
             cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-            // maxs[process_batch_id] = ms[process_batch_id];
-            (tmp_out_true)=_mm_and_ps(cond,v_m);
-            (tmp_out_false)=_mm_andnot_ps(cond,v_max);
-            v_max = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-            // max_is[process_batch_id] = i;
-            (tmp_out_true)=_mm_and_ps(cond,v_i);
-            (tmp_out_false)=_mm_andnot_ps(cond,v_max_i);
-            v_max_i = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
-            // max_js[process_batch_id] =  mjs[process_batch_id];
-            (tmp_out_true)=_mm_and_ps(cond,v_mj);
-            (tmp_out_false)=_mm_andnot_ps(cond,v_max_j);
-            v_max_j = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+            cmp_gen_result(cond, v_m, v_max, tmp_out_true, tmp_out_false, v_max);
+            cmp_gen_result(cond, v_i, v_max_i, tmp_out_true, tmp_out_false, v_max_i);
+            cmp_gen_result(cond, v_mj, v_max_j, tmp_out_true, tmp_out_false, v_max_j);
             //max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
             __m128i v_tmp_maxoff = _mm_abs_epi16( _mm_subs_epi16(v_mj, v_i));
             v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
-            (tmp_out_true)=_mm_and_ps(cond,v_tmp_maxoff);
-            (tmp_out_false)=_mm_andnot_ps(cond,v_max_off);
-            v_max_off = (__m128i)_mm_or_ps(tmp_out_true,tmp_out_false);
+            cmp_gen_result(cond, v_tmp_maxoff, v_max_off, tmp_out_true, tmp_out_false, v_max_off);
+
             flag=1;
             
             
@@ -810,7 +720,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             {
                 flag=0;
                 
-                
                 for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
                 {
                     if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
@@ -823,84 +732,44 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
                 }
             }
     
-            __m128i v_beg2,v_end2;
             __m128i v_tmp;
-            int16_t min_beg, max_beg, min_end, max_end;
+
             if(flag==0)
-                break_flag=1;
-//            for(int i =0; i<que_align; i++)
-//            {
-//                _mm_store_si128((__m128i*)hs[i], v_hs[i]);
-//                _mm_store_si128((__m128i*)es[i], v_es[i]);
-//            }
-//            _mm_store_si128((__m128i*)begs, v_beg);
-//            _mm_store_si128((__m128i*)ends, v_end);
-           // int16_t j;
+                break;//break_flag=1;
             
-            v_beg2 = _mm_load_si128((__m128i*)begs);
-            v_end2 = _mm_load_si128((__m128i*)ends);
-            v_tmp = v_beg2;
-            __min_8(min_beg,v_tmp);
-            v_tmp = v_beg2;
-            __max_8(max_beg,v_tmp);
-            v_tmp = v_end2;
+            v_tmp = v_end;
             __min_8(min_end,v_tmp);
-            v_tmp = v_end2;
+            v_tmp = v_end;
             __max_8(max_end,v_tmp);
-            
             
             
             for(j=min_beg; LIKELY(j<min_end); j++)
             {
-                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
-                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
+                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
              min_beg = j;
             for(; LIKELY(j<min_end); j++)
             {
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//all not zero break
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//all not zero break
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
             }
              max_beg = j;
             
             for(j=max_end; LIKELY(j>max_beg); j--)
             {
-                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_hs[j],v_zero)))break;//any one not zero break
-                if(_mm_movemask_epi8(_mm_cmpneq_ps(v_es[j],v_zero)))break;//any one not zero break
+                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
             max_end = j;
             for(;LIKELY(j>max_beg); j--)
             {
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_hs[j],v_zero)))break;//all not zero break
-                if(!_mm_movemask_epi8(_mm_cmpeq_ps(v_es[j],v_zero)))break;//all not zero break
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
             }
             min_end = j;
-            
             v_tmp = _mm_set1_epi16(max_end+2);
-            
-//            int16_t t_js[8];
-//            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-//            {
-//                int16_t j;
-//                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) ; ++j)
-//                {
-//
-//                    if(hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
-//                    break;
-//                }
-//                begs[process_batch_id]=j;
-//                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) ; --j)
-//                {
-//
-//                    if( hs[j][process_batch_id] == 0 && es[j][process_batch_id] == 0)continue;
-//                    break;
-//                }
-//                ends[process_batch_id] = j + 2 < qlens[process_batch_id]? j + 2 : qlens[process_batch_id];
-//            }
-            v_beg = _mm_set1_epi16(min_beg);//_mm_load_si128((__m128i*)begs);
-            v_end = _mm_min_epi16(v_tmp, v_qlen);//_mm_load_si128((__m128i*)ends);
-
-            
+            v_end = _mm_min_epi16(v_tmp, v_qlen);
         }
         for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
         {
@@ -912,13 +781,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true, tmp_out_false);\
             g_score[process_batch_id + grid_process_batch_idx*8] = maxs[process_batch_id];
 
         }
-        for(int i=0; i<que_align+1;i++)
-        {
-            free(es[i]);
-            free(hs[i]);
-        }
-        free(hs);
-        free(es);
         free(v_hs);
         free(v_es);
 
@@ -1181,8 +1043,11 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
     free(qp_buff_rev);
 }
 /**************/
+#include<time.h>
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 {
+    clock_t m_start,m_end;
+    m_start = clock();
     //sort
     assert(size>=0);
     uint64_t* swlen = malloc(sizeof(int64_t)*size);//should record qlen rlen
@@ -1218,6 +1083,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     packed_hash_t* que_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
     memset(que_hash,0,sizeof(packed_hash_t)*aligned_resize);
 
+    
+    //init
     int ref_global_id_x=0;
     {
         int ref_aligned_len=0;
@@ -1290,7 +1157,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     //swlen_resize size is resize
     //construct RDB;
 
-    
+    clock_t start,end;
+    start = clock();
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
@@ -1301,6 +1169,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         uint8_t* db_ptr = rdb+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
         memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
     }
+    end = clock();
+    fprintf(stderr,"ref copy time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
 #ifdef DEBUG_SW
     for(int i=0; i<resize; i++)
     {
@@ -1315,6 +1185,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         }
     }
 #endif
+    start = clock();
     for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
     {
         packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
@@ -1324,7 +1195,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         int y = ref_hash_t->alined;
         transpose_8(db_ptr, db_rev_ptr, x, y);
     }
-    
+    end = clock();
+    fprintf(stderr,"ref transpose time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
  #ifdef DEBUG_SW
     {
         packed_hash_t* rdb_hash_t = &ref_hash[1*BATCHSIZE];
@@ -1343,7 +1215,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 #endif
     int16_t* qp_db2 = malloc(que_global_id_x*BATCHSIZE*g_m*sizeof(int16_t));//should be usingned ,change in the future
     memset(qp_db2,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*g_m);
-
+    start = clock();
     for(int i=0; i<resize; i++)
     {
 
@@ -1370,7 +1242,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             for(;j<aligned; ++j) qp2[m++]=p[5];
         }
     }
-
+    end = clock();
+    fprintf(stderr,"qp execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
 
 //    
     
@@ -1390,6 +1263,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     uint64_t* swlen_nxt_id = swlen_resized;//resize
     uint32_t remain = resize;
     uint32_t next_process = BATCHSIZE;
+    //main
+    start = clock();
     for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
     {
         swlen_batch_id = swlen_resized+seg_idx* BATCHSIZE;
@@ -1453,10 +1328,15 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 
         }
     }
-    
+    end = clock();
+    fprintf(stderr,"main execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+
     free(rdb);
     free(rdb_rev);
     free(swlen);
+    m_end = clock();
+    fprintf(stderr,"total execution time:%f\n",(float)(m_end - m_start) / CLOCKS_PER_SEC);
+
 }
 
 
