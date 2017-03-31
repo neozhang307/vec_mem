@@ -482,7 +482,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 //        {
 //            
 //        }
-        assert(_mm_movemask_epi8(_mm_cmplt_epi16((__m128)v_h0, (__m128)v_zero))==0);//all v_h0 > 0
+        assert(_mm_movemask_epi8(_mm_cmplt_epi16(v_h0, v_zero))==0);//all v_h0 > 0
         __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         
