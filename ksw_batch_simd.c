@@ -1043,7 +1043,7 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 }
 /**************/
 #include<time.h>
-void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
+void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
 #ifdef SWBATCHDB
     clock_t m_start,m_end;
@@ -1051,6 +1051,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     m_start = clock();
 #endif
     //sort
+    assert(m==5);
     assert(size>=0);
     uint64_t* swlen = malloc(sizeof(int64_t)*size);//should record qlen rlen
     for(uint32_t i=0; i<size; ++i)
@@ -1084,7 +1085,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         int idx = swlen[i]>>32;
         swrst_t *sw = swrts+idx;
         swseq_t *seq = sw->sw_seq;
-        sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins, g_zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+        sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, m, mat, o_del, e_del, o_ins, e_ins, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
     }
 //
     
@@ -1280,11 +1281,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     /************************/
   //  for(int i=ptr; i<size;++i)
     
-    int o_del = g_o_del;
-    int e_del = g_e_del;
-    int o_ins = g_o_ins;
-    int e_ins = g_e_ins;
-    int zdrop = g_zdrop;
+
  
     
     uint64_t* swlen_batch_id = swlen_resized;//resize
@@ -1377,10 +1374,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
 
 
 
-void ksw_extend_batch(swrst_t* swrts, size_t size)
+void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
     //sort
-    
+    assert(m==5);
     for(int i=0; i<size;++i)
     {
 //            swrst_t *sw = swrts+i;
@@ -1398,14 +1395,9 @@ void ksw_extend_batch(swrst_t* swrts, size_t size)
             int tlen = seq->rlen;
             const uint8_t *query = seq->query;
             const uint8_t *target = seq->ref;
-            int o_del = g_o_del;
-            int e_del = g_e_del;
-            int o_ins = g_o_ins;
-            int e_ins = g_e_ins;
-            int zdrop = g_zdrop;
+         
             int h0 = sw->h0;
-            const int8_t *mat = g_mat[0];
-            int m = g_m;
+
             //process 16 query at a time for uint8; process 8 query at a time for uint16 query
             {
                 eh_m *eh; // score array
@@ -1546,7 +1538,7 @@ int main()
     double rtime = realtime();
     size_t process_sze = nread;
     fprintf(stderr,"now try %ld\n",process_sze);
-    ksw_extend_batch2(nsrt, process_sze);
+    ksw_extend_batch2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
     
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);

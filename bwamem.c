@@ -2227,8 +2227,8 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
 //    store_config();
 //    load_config();
 //    fprintf(stderr,"the check result is %d \n",check_config(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop));
-    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
-    ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch]);
+//    init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+    ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
 //    for(int i=0; i<batch_id[batch];++i)
 //    {
 //        swrst_t *sw = g_srt+i;
