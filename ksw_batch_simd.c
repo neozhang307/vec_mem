@@ -419,7 +419,8 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 } while (0)
     
   //  int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
-     __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins;
+     __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins,v_zdrop;
+    v_zdrop = _mm_set1_epi16(zdrop);
     v_zero = _mm_set1_epi32(0);
     v_oe_del = _mm_set1_epi16(o_del + e_del);
     v_e_del = _mm_set1_epi16(e_del);
@@ -457,8 +458,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     
   
    // int16_t begs[8], ends[8];
-    int16_t maxs[8], max_is[8], max_js[8], max_ies[8], gscores[9], max_offs[8];
-    int16_t h0s[8];
+
     
     //inreducable
     __m128i v_end;
@@ -475,12 +475,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         
         //process 8 query at a time for int16_t
         v_h0=_mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-        {
-            h0s[process_batch_id]=g_h0[process_batch_id+grid_process_batch_idx*8];
-            assert( h0s[process_batch_id] >= 0);
-        }
-
+//        if(_mm_movemask_epi8(_mm_cmplt_ps((__m128)v_h0, (__m128)v_zero))!=0)//v_h0>0
+//        {
+//            
+//        }
+        assert(_mm_movemask_epi8(_mm_cmplt_ps((__m128)v_h0, (__m128)v_zero))==0);//all v_h0 > 0
         __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         
@@ -498,8 +497,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             }
             v_hs[j]=v_tmp;
         }
-        /**************/
-
         /*********keeep************/
         for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
         {
@@ -507,14 +504,14 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             packed_hash_t * tmp_quehash = que_hash+process_batch_id+grid_process_batch_idx*8;
             packed_hash_t * tmp_refhash = ref_hash+process_batch_id+grid_process_batch_idx*8;
             qlens[process_batch_id]=tmp_quehash->len;
-            maxqlen=tmp_quehash->batch_max_len;//maxqlen>tmp_quehash->len?maxqlen:tmp_quehash->len;
-            
             tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
-            maxtlen=tmp_refhash->batch_max_len;//maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
         }
-        
+        maxqlen=que_hash->batch_max_len;
+        maxtlen=ref_hash->batch_max_len;
         v_qlen=_mm_load_si128((__m128i*)qlens);
+        
         v_tlen=_mm_load_si128((__m128i*)tlens);
+        
         v_max = v_h0;
         v_max_i =_mm_set1_epi16(-1);
         v_max_j =_mm_set1_epi16(-1);
@@ -522,7 +519,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         v_gscore =_mm_set1_epi16(-1);
         v_max_off = _mm_set1_epi32(0);
         /************************/
-        int16_t  ms[8], mjs[8];
         /***********new*************/
         //reducable
         __m128i v_t, v_f, v_h1, v_m, v_mj;
@@ -544,6 +540,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         /************************/
         //MAIN SW
         for (int16_t i = 0; LIKELY(i < maxtlen) ; ++i) {
+            __m128i v_tmp1;
             __m128i cond,cond2;
             __m128i truecase,falsecase,tmp_h,tmp_l;
             __m128i tmp_out_true,tmp_out_false;
@@ -682,10 +679,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 cmp_gen_result(cond, v_i, v_max_ie, tmp_out_true, tmp_out_false, v_max_ie);
                 cmp_gen_result(cond, v_h1, v_gscore, tmp_out_true, tmp_out_false, v_gscore);
             }
-            _mm_store_si128((__m128i*) gscores, v_gscore);
-            _mm_store_si128((__m128i*) max_ies, v_max_ie);
-            _mm_store_si128((__m128i*) ms, v_m);
-            _mm_store_si128((__m128i*) mjs, v_mj);
                 //if the search should terminated earlier?
             uint8_t flag = 0;
             
@@ -707,40 +700,40 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             cmp_gen_result(cond, v_tmp_maxoff, v_max_off, tmp_out_true, tmp_out_false, v_max_off);
 
             flag=1;
-            
-            
-            _mm_store_si128((__m128i*)max_is, v_max_i);
-            _mm_store_si128((__m128i*)mjs, v_mj);
-            _mm_store_si128((__m128i*)max_js, v_max_j);
-            _mm_store_si128((__m128i*)maxs, v_max);
-            _mm_store_si128((__m128i*)ms, v_m);
-            _mm_store_si128((__m128i*)max_offs , v_max_off);
-            //serial code
+
             if(zdrop>0&&!_mm_movemask_epi8(cond))//all false
             {
+                __m128i v_tmp2,v_tmp3,v_tmp4,v_tmp5,v_tmp6,v_tmp7,v_tmp8,cond3;
                 flag=0;
+                v_tmp1 = _mm_subs_epi16(v_i, v_max_i);//i - max_is[process_batch_id]
+                v_tmp2 = _mm_subs_epi16(v_mj, v_max_j);//mjs[process_batch_id] - max_js[process_batch_id]
+                cond = _mm_cmpgt_epi16(v_tmp1, v_tmp2);
+                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                v_tmp3 = _mm_subs_epi16(v_tmp1, v_tmp2);//(i - max_is[process_batch_id]) - (mjs[process_batch_id] - max_js[process_batch_id])
+                v_tmp4 = _mm_mulhrs_epi16(v_tmp3, v_e_del);//(i - max_is[process_batch_id]) - (mjs[process_batch_id] - max_js[process_batch_id])*e_del
+                v_tmp5 = _mm_mulhrs_epi16(v_tmp3, v_e_ins);//(i - max_is[process_batch_id]) - (mjs[process_batch_id] - max_js[process_batch_id])*e_ins
+                v_tmp6 = _mm_subs_epi16(v_max, v_m);//maxs[process_batch_id] - ms[process_batch_id]
                 
-                for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-                {
-                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
-                        //if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del < zdrop) flag=1;
-                    } else {
-                        //if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins < zdrop) flag=1;
-                    }
-                }
+                v_tmp7 = _mm_subs_epi16(v_tmp6, v_tmp4);
+                v_tmp8 = _mm_adds_epi16(v_tmp6, v_tmp5);
+                cond2 = _mm_cmplt_epi16(v_tmp7, v_zdrop);
+                cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
+         
+                cond3 = _mm_cmplt_epi16(v_tmp8, v_zdrop);
+                cmp_int16flag_change(cond3, v_zero, cond3, tmp_h, tmp_l);
+               
+                cond2 = _mm_and_ps(cond, cond2);
+                cond3 = _mm_andnot_ps(cond, cond3);
+                
+                cond = _mm_or_si128(cond2, cond3);
+                if(_mm_movemask_epi8(cond))flag=1;
+                
             }
-    
-            __m128i v_tmp;
 
-            if(flag==0)
-                break;//break_flag=1;
-            
-            v_tmp = v_end;
-            __min_8(min_end,v_tmp);
-            v_tmp = v_end;
-            __max_8(max_end,v_tmp);
+            v_tmp1 = v_end;
+            __min_8(min_end,v_tmp1);
+            v_tmp1 = v_end;
+            __max_8(max_end,v_tmp1);
             
             
             for(j=min_beg; LIKELY(j<min_end); j++)
@@ -768,19 +761,22 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(!_mm_movemask_epi8(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
             }
             min_end = j;
-            v_tmp = _mm_set1_epi16(max_end+2);
-            v_end = _mm_min_epi16(v_tmp, v_qlen);
+            v_tmp1 = _mm_set1_epi16(max_end+2);
+            v_end = _mm_min_epi16(v_tmp1, v_qlen);
         }
-        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-        {
-            g_qle[process_batch_id + grid_process_batch_idx*8] = max_js[process_batch_id]+1;
-            g_tle[process_batch_id + grid_process_batch_idx*8] = max_is[process_batch_id]+1;
-            g_gtle[process_batch_id + grid_process_batch_idx*8] = max_ies[process_batch_id]+1;
-            g_gscore[process_batch_id + grid_process_batch_idx*8] = gscores[process_batch_id];
-            g_max_off[process_batch_id + grid_process_batch_idx*8] = max_offs[process_batch_id];
-            g_score[process_batch_id + grid_process_batch_idx*8] = maxs[process_batch_id];
-
-        }
+        __m128i v_tmp1;
+        __m128i v_one = _mm_set1_epi16(1);
+        v_tmp1 = _mm_add_epi16(v_max_j, v_one);
+        _mm_store_si128(((__m128i*)g_qle)+grid_process_batch_idx,v_tmp1);
+        v_tmp1 = _mm_add_epi16(v_max_i, v_one);
+        _mm_store_si128(((__m128i*)g_tle)+grid_process_batch_idx,v_tmp1);
+        v_tmp1 = _mm_add_epi16(v_max_ie, v_one);
+        _mm_store_si128(((__m128i*)g_gtle)+grid_process_batch_idx,v_tmp1);
+       
+        _mm_store_si128(((__m128i*)g_gscore)+grid_process_batch_idx,v_gscore);
+        _mm_store_si128(((__m128i*)g_max_off)+grid_process_batch_idx,v_max_off);
+        _mm_store_si128(((__m128i*)g_score)+grid_process_batch_idx,v_max);
+        
         free(v_hs);
         free(v_es);
 
@@ -1067,7 +1063,22 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     assert((uint32_t)swlen[0]==0);
 #endif
     int ptr = 0;
+    
+    int threashold = 0;
     while((uint32_t)swlen[ptr]==0&&ptr<size) ptr++;
+    
+    int none_zero = ptr;
+    while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
+    fprintf(stderr,"jump from %d to %d, while total size is%d\n",none_zero,ptr,size);
+//    //sinple use sinple way
+    for(int i=none_zero; i<ptr; i++)
+    {
+        int idx = swlen[i]>>32;
+        swrst_t *sw = swrts+idx;
+        swseq_t *seq = sw->sw_seq;
+        sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins, g_zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+    }
+//
     
     //recompute space size
     //uint8_t batch = BATCHSIZE;//16 | 8
@@ -1143,6 +1154,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             que_global_id_x+=que_aligned_len;
         }
     }
+    
     
 
     uint8_t* rdb = malloc(ref_global_id_x*BATCHSIZE);
@@ -1325,7 +1337,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
             sw->max_off = g_max_off[batch_idx];
             sw->score = g_score[batch_idx];
             swlen_nxt_id++;
-
         }
     }
     end = clock();
