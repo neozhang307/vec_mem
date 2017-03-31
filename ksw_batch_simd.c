@@ -1240,8 +1240,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         }
     }
 #endif
-    int16_t* qp_db2 = malloc(que_global_id_x*BATCHSIZE*g_m*sizeof(int16_t));//should be usingned ,change in the future
-    memset(qp_db2,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*g_m);
+    int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*g_m*sizeof(int16_t));//should be usingned ,change in the future
+    memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*g_m);
 #ifdef SWBATCHDB
     start = clock();
 #endif
@@ -1260,7 +1260,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         int aligned = que_hash_cur_ptr->alined;
         
         //fprintf(stderr,"global_batch_id %ld, local_id_y %d, align %d \n",que_hash_t->global_batch_id,que_hash_t->local_id_y,que_hash_t->alined);
-        int16_t* qp2 = qp_db2+g_m*(que_hash_cur_ptr->global_batch_id+que_hash_cur_ptr->local_id_y*que_hash_cur_ptr->alined);
+        int16_t* qp2 = qp_db+g_m*(que_hash_cur_ptr->global_batch_id+que_hash_cur_ptr->local_id_y*que_hash_cur_ptr->alined);
         
         //fprintf(stderr,"check%d\n",qp2[0]);
         const uint8_t* query =seq->query;
@@ -1330,7 +1330,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
         //process 16 query at a time
         batch_sw_core(ref_hash_batch_ptr,que_hash_batch_ptr,
                             rdb_rev,
-                            qp_db2,
+                            qp_db,
                             g_h0,//input
                             o_del,
                             e_del,
@@ -1363,9 +1363,12 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size)
     end = clock();
     fprintf(stderr,"main execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
 #endif
+    free(ref_hash);
+    free(que_hash);
     free(rdb);
     free(rdb_rev);
     free(swlen);
+    free(qp_db);
 #ifdef SWBATCHDB
     m_end = clock();
     fprintf(stderr,"total execution time:%f\n",(float)(m_end - m_start) / CLOCKS_PER_SEC);
