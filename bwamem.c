@@ -2208,8 +2208,9 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
     }
     //SW
+#ifdef DEBUG_SW
     kstring_t str={0,0,0};
-#ifdef DBUGSW
+
     if(tid == 0&&start == 8000)
     {
     kputs("sw_start_",&str);
@@ -2239,7 +2240,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
 //    }
 //
 //
-#ifdef DEBUGSW
+#ifdef DEBUG_SW
     if(tid == 0&&start == 8000)
     {
     free(str.s);

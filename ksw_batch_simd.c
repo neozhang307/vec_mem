@@ -492,7 +492,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             
             v_tmp = _mm_subs_epu16(v_tmp, v_e_ins);
             
-            if(!_mm_movemask_epi8(_mm_cmpneq_pd((__m128)v_tmp, (__m128)v_zero)))
+            if(!_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_tmp, (__m128)v_zero)))
             {
                 break;//when all equal to zero, break;
             }
@@ -677,7 +677,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 // when true potentially change
                 cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
                 
-                cond = _mm_andnot_ps(cond2, cond);
+                cond = (__m128i)_mm_andnot_ps((__m128)cond2, (__m128)cond);
     
                 cmp_gen_result(cond, v_i, v_max_ie, tmp_out_true, tmp_out_false, v_max_ie);
                 cmp_gen_result(cond, v_h1, v_gscore, tmp_out_true, tmp_out_false, v_gscore);
@@ -691,7 +691,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             
             //m==0 break
            
-            if(!_mm_movemask_epi8(_mm_cmpneq_pd((__m128)v_m, (__m128)v_zero)))
+            if(!_mm_movemask_epi8(_mm_cmpneq_ps((__m128)v_m, (__m128)v_zero)))
             {
                 break;//break_flag=1;//when all equal to zero, break;
             }
