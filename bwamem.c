@@ -1365,7 +1365,7 @@ void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uin
     mem_chain_extent(opt, bns, pac, l_query,query, c, swbwd_);
 }
 
-void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], mem_alnreg_t *av_firstpass, swrst_t* swfwd_, swrst_t* swbwd_)
+void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], mem_alnreg_t *av_firstpass, swrst_t* swfwd_, swrst_t* swbwd_)
 {
     int i, k, aw[2]; // aw: actual bandwidth used in extension
     const mem_seed_t *s;
@@ -1383,7 +1383,7 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
         swrst_t *swfwd = &swfwd_[k];
         swrst_t *swbwd = &swbwd_[k];
         swseq_t *fwd = swfwd->sw_seq;
-        swseq_t * bwd = swbwd->sw_seq;
+        swseq_t *bwd = swbwd->sw_seq;
         if(fwd->qlen!=0)
         {
             int qle, tle, gtle, gscore;
@@ -1707,7 +1707,7 @@ void mem_chains2aln_postextent(const mem_opt_t *opt, const bwt_t *bwt, const bnt
         mem_alnreg_t *av_firstpass =&g_av_firstpass[index[i]];
         swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
         swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
-        mem_chain2aln_filter(opt, bns, pac, l_query, query, c, &rmaxs[2*i], av_firstpass, swfwd, swbwd);
+        mem_chain2aln_post(opt, bns, pac, l_query, query, c, &rmaxs[2*i], av_firstpass, swfwd, swbwd);
         mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
     }
 }
