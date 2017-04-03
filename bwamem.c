@@ -1386,7 +1386,7 @@ void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t
         swrst_t *swbwd = &swbwd_[k];
         swseq_t *fwd = swfwd->sw_seq;
         swseq_t *bwd = swbwd->sw_seq;
-        if(fwd->qlen!=0)
+        if(fwd->qlen!=0)//left extension
         {
             int qle, tle, gtle, gscore;
             
@@ -1410,7 +1410,7 @@ void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t
             a->qb = 0;
             a->rb = s->rbeg;
         }
-        if(bwd->qlen!=0)
+        if(bwd->qlen!=0)//right extension
         {
             int qle, tle, qe, re, gtle, gscore, sc0 = swfwd->score;
             qe = s->qbeg + s->len;
@@ -1446,7 +1446,7 @@ void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t
 }
 #define min(a,b) a<b?a:b
 #define max(a,b) a>b?a:b
-void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_t *av_firstpass,mem_alnreg_v *av)
+void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_t *av_firstpass, mem_alnreg_v *av)
 {
     int i, k;
     const mem_seed_t *s;
