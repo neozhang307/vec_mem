@@ -1925,6 +1925,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     free(batch_id);
     free(g_srt);
 }
+
 void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*getItem)(qext_t*,size_t), int start,  int tid)
 {
     //init
@@ -1999,7 +2000,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     const mem_opt_t *opt = w->opt;
     
     //left extension
-    mem_chain_extent_batch3(opt, ext_base, chn_idx, batch, fwd,start, tid);
+    mem_chain_extent_batch(opt, ext_base, chn_idx, batch, fwd,start, tid);
     //init right
     for(int j=0; j<batch; ++j)
     {
@@ -2017,7 +2018,77 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         }
     }
     //right extension
-    mem_chain_extent_batch3(opt, ext_base, chn_idx, batch, bwd,start,tid);
+    mem_chain_extent_batch(opt, ext_base, chn_idx, batch, bwd,start,tid);
+    //finalize
+    for(int i=start,j=0; j<batch; ++j,++i)
+    {
+        qext_t* ext_val = ext_base+j;// &w->ext_val[batch*tid+j];
+        
+        mem_alnreg_v regs;
+        kv_init(regs);
+        mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, local_chn[j], ext_val , &regs );
+        //finalize
+        w->regs[i] = regs;
+    }
+    for(int i=start,j=0; j<batch; ++j,++i)
+    {
+        qext_t* ext_val = ext_base+j;
+        mem_chains2aln_finalize( local_chn[j], ext_val);
+    }
+    free(ext_base);
+    free(local_chn);
+    free(chn_idx);
+}
+
+static void worker_mod_batch2(void *data, int start, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    qext_t* ext_base = malloc(sizeof(qext_t)*batch);//&w->ext_val[batch*tid];
+    //gen chains
+    size_t * chn_idx = malloc(sizeof(size_t)*batch);
+    mem_chain_v * local_chn = malloc(sizeof(mem_chain_v)*batch);
+    for(int i=start,j=0; j<batch; ++j,++i)
+    {
+        mem_chain_v chn =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+        chn_idx[j] = chn.n;
+        local_chn[j]= chn;
+    }
+    //init sw
+    for(int i=start,j=0; j<batch; ++j,++i)
+    {
+        qext_t* ext_val = ext_base+j;// &w->ext_val[batch*tid+j];
+        
+        mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, local_chn[j], ext_val);
+        
+    }
+    const mem_opt_t *opt = w->opt;
+    
+    //left extension
+    mem_chain_extent_batch(opt, ext_base, chn_idx, batch, fwd,start, tid);
+    {
+        
+    }
+    //init right
+    for(int j=0; j<batch; ++j)
+    {
+        qext_t* ext_val = ext_base+j;// &w->ext_val[batch*tid+j];
+        
+        size_t *index = ext_val->index;
+        size_t max_idx = index[chn_idx[j]];
+        swrst_t * swfwd = &ext_val->g_swfwd[0];
+        swrst_t * swbwd = &ext_val->g_swbwd[0];
+        for(int i=0; i<max_idx; i++)
+        {
+            int pre_score= swfwd[i].score;
+            swrst_t *swbwd_ = &swbwd[i];
+            swbwd_->h0=pre_score;
+        }
+    }
+    //right extension
+    mem_chain_extent_batch(opt, ext_base, chn_idx, batch, bwd,start,tid);
+    {
+        
+    }
     //finalize
     for(int i=start,j=0; j<batch; ++j,++i)
     {
