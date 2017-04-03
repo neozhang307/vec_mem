@@ -2057,17 +2057,55 @@ static void worker_mod_batch2(void *data, int start, int batch, int tid)
     for(int i=start,j=0; j<batch; ++j,++i)
     {
         qext_t* ext_val = ext_base+j;// &w->ext_val[batch*tid+j];
-        
         mem_chains2aln_init(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, local_chn[j], ext_val);
-        
     }
     const mem_opt_t *opt = w->opt;
-    
     //left extension
-    mem_chain_extent_batch(opt, ext_base, chn_idx, batch, fwd,start, tid);
-    {
+  //  mem_chain_extent_batch(opt, ext_base, chn_idx, batch, fwd,start, tid);
+   {
+        size_t* batch_id = malloc((batch+1)*sizeof(size_t));
+        batch_id[0]=0;
+        size_t pre_id;
+        pre_id=0;
+        for(int i=1; i<=batch; i++)
+        {
+            qext_t* ext_val = ext_base+i-1;
+            size_t *ext_index = ext_val->index;
+            size_t ext_size = ext_index[chn_idx[i-1]];// a seed related swrst count
+            size_t cur_id = ext_size + pre_id;
+            batch_id[i] = cur_id;
+            pre_id = cur_id;
+        }
+        swrst_t* g_srt = malloc(batch_id[batch]*sizeof(swrst_t));
+        for(int i=0; i<batch; i++)
+        {
+            qext_t* ext_val = ext_base+i;
+            size_t *ext_index = ext_val->index;
+            size_t ext_size = ext_index[chn_idx[i]];
+            
+            size_t ptr = batch_id[i];
+            size_t idff = batch_id[i+1]-batch_id[i];
+            assert(idff == ext_size);
+            
+            swrst_t * sws =fwd(ext_val,0);
+            memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
+        }
+        //SW
+        ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+        //finalize
+        for(int i=0; i<batch; i++)
+        {
+            qext_t* ext_val = ext_base+i;
+            size_t *ext_index = ext_val->index;
+            size_t ext_size = ext_index[chn_idx[i]];
+            
+            size_t ptr = batch_id[i];
+            
+            swrst_t * sws =fwd(ext_val,0);
+            memcpy(sws, g_srt+ptr, ext_size*sizeof(swrst_t));
+        }
         
-    }
+
     //init right
     for(int j=0; j<batch; ++j)
     {
@@ -2085,9 +2123,37 @@ static void worker_mod_batch2(void *data, int start, int batch, int tid)
         }
     }
     //right extension
-    mem_chain_extent_batch(opt, ext_base, chn_idx, batch, bwd,start,tid);
-    {
+
+        for(int i=0; i<batch; i++)
+        {
+            qext_t* ext_val = ext_base+i;
+            size_t *ext_index = ext_val->index;
+            size_t ext_size = ext_index[chn_idx[i]];
+            
+            size_t ptr = batch_id[i];
+            size_t idff = batch_id[i+1]-batch_id[i];
+            assert(idff == ext_size);
+            
+            swrst_t * sws =bwd(ext_val,0);
+            memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
+        }
+        //SW
+        ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+        //finalize
+        for(int i=0; i<batch; i++)
+        {
+            qext_t* ext_val = ext_base+i;
+            size_t *ext_index = ext_val->index;
+            size_t ext_size = ext_index[chn_idx[i]];
+            
+            size_t ptr = batch_id[i];
+            
+            swrst_t * sws =bwd(ext_val,0);
+            memcpy(sws, g_srt+ptr, ext_size*sizeof(swrst_t));
+        }
         
+        free(batch_id);
+        free(g_srt);
     }
     //finalize
     for(int i=start,j=0; j<batch; ++j,++i)
