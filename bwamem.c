@@ -617,7 +617,9 @@ void mem_flt_chained_seeds(const mem_opt_t *opt, const bntseq_t *bns, const uint
 /****************************************
  * Construct the alignment from a chain *
  ****************************************/
-
+//NEO:
+//max mismatch no larger than opt->w<<1
+//a is the match score
 static inline int cal_max_gap(const mem_opt_t *opt, int qlen)
 {
 	int l_del = (int)((double)(qlen * opt->a - opt->o_del) / opt->e_del + 1.);
@@ -1367,7 +1369,7 @@ void mem_chain2aln_swextent(const mem_opt_t *opt, const bntseq_t *bns, const uin
 
 void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, int64_t rmax[2], mem_alnreg_t *av_firstpass, swrst_t* swfwd_, swrst_t* swbwd_)
 {
-    int i, k, aw[2]; // aw: actual bandwidth used in extension
+    int i, k;//, aw; // aw: actual bandwidth used in extension
     const mem_seed_t *s;
     
     
@@ -1377,7 +1379,7 @@ void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t
         mem_alnreg_t *a;
         a = &av_firstpass[k];
         memset(a, 0, sizeof(mem_alnreg_t));
-        a->w = aw[0] = aw[1] = opt->w;
+      //  a->w = aw = 0;//opt->w;
         a->score = a->truesc = -1;
         a->rid = c->rid;
         swrst_t *swfwd = &swfwd_[k];
@@ -1436,14 +1438,15 @@ void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t
             if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) // seed fully contained
                 a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
         }
-        a->w = aw[0] > aw[1]? aw[0] : aw[1];
+     //   a->w = aw;
         a->seedlen0 = s->len;
         a->frac_rep = c->frac_rep;
-        if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
+        if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score);
     }
 }
-
-void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_t *av_firstpass,mem_alnreg_v *av)
+#define min(a,b) a<b?a:b
+#define max(a,b) a>b?a:b
+void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_t *av_firstpass,mem_alnreg_v *av)
 {
     int i, k;
     const mem_seed_t *s;
@@ -1456,7 +1459,7 @@ void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8
     srt = malloc(c->n * 8);
     for (i = 0; i < c->n; ++i)
         srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
-    ks_introsort_64(c->n, srt);// NEO: srt in decending order
+    ks_introsort_64(c->n, srt);// NEO: srt in decending order //first by SW then by index
     
     for (k = c->n - 1; k >= 0; --k) {
         mem_alnreg_t *a;
@@ -1476,15 +1479,19 @@ void mem_chain2aln_genaln(const mem_opt_t *opt, const bntseq_t *bns, const uint8
             if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
             // qd: distance ahead of the seed on query; rd: on reference
             qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+            assert(qd>=0);
             max_gap = cal_max_gap(opt, qd < rd? qd : rd); // the maximal gap allowed in regions ahead of the seed
+          //  fprintf(stderr, "1 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
             w = max_gap < p->w? max_gap : p->w; // bounded by the band width
             if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
             // similar to the previous four lines, but this time we look at the region behind
             qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
             max_gap = cal_max_gap(opt, qd < rd? qd : rd);
+          //  fprintf(stderr, "2 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
             w = max_gap < p->w? max_gap : p->w;
             if (qd - rd < w && rd - qd < w) break;
         }
+   //     fprintf(stderr, "break is %d/%d", i<av->n,i);
         // NEO:
         // rescue the seed marked as overlap, if it would lead to a different result
         if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
@@ -1708,7 +1715,7 @@ void mem_chains2aln_postextent(const mem_opt_t *opt, const bwt_t *bwt, const bnt
         swrst_t * swfwd = &ext_val->g_swfwd[index[i]];
         swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
         mem_chain2aln_post(opt, bns, pac, l_query, query, c, &rmaxs[2*i], av_firstpass, swfwd, swbwd);
-        mem_chain2aln_genaln(opt, bns, pac, l_query, query, c, av_firstpass, av);
+        mem_chain2aln_filter(opt, bns, pac, l_query, query, c, av_firstpass, av);
     }
 }
 
