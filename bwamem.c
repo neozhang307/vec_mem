@@ -1474,21 +1474,23 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
         for (i = 0; i < av->n; ++i) { // test whether extension has been made before
             mem_alnreg_t *p = &av->a[i];
             int64_t rd;
-            int qd, w, max_gap;
+            int qd, w, max_gap, max_overlap;
             if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
             if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
             // qd: distance ahead of the seed on query; rd: on reference
             qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+            max_overlap = min(qd,rd);
             assert(qd>=0);
-            max_gap = cal_max_gap(opt, qd < rd? qd : rd); // the maximal gap allowed in regions ahead of the seed
+            max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
           //  fprintf(stderr, "1 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
-            w = max_gap < p->w? max_gap : p->w; // bounded by the band width
+            w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
             if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
             // similar to the previous four lines, but this time we look at the region behind
             qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
-            max_gap = cal_max_gap(opt, qd < rd? qd : rd);
+            max_overlap = min(qd,rd);
+            max_gap = cal_max_gap(opt, max_overlap);
           //  fprintf(stderr, "2 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
-            w = max_gap < p->w? max_gap : p->w;
+            w = max_gap-max_overlap;// < p->w? max_gap : p->w;
             if (qd - rd < w && rd - qd < w) break;
         }
    //     fprintf(stderr, "break is %d/%d", i<av->n,i);
@@ -2053,6 +2055,8 @@ static void worker_mod_batch2(void *data, int start, int batch, int tid)
         chn_idx[j] = chn.n;
         local_chn[j]= chn;
     }
+    
+    
     //init sw
     for(int i=start,j=0; j<batch; ++j,++i)
     {
