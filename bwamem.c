@@ -1753,7 +1753,6 @@ void mem_chains2aln_sw(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *b
         swrst_t * swbwd = &ext_val->g_swbwd[index[i]];
         //right extend
         mem_chain_extent(opt, bns, pac, l_query,query, c, swbwd);
-
     }
 }
 
@@ -1811,7 +1810,7 @@ typedef struct {
     mem_alnreg_v *regs;
   //  mem_chain_v *chn;//to do set to thread private
     
-    qext_t* ext_val;// to do set to thread private
+   // qext_t* ext_val;// to do set to thread private
     
     int64_t n_processed;
 } worker_t_mod;
@@ -1855,7 +1854,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
         size_t *ext_index = ext_val->index;
         size_t ext_size = ext_index[chn_idx[i-1]];// a seed related swrst count
         size_t cur_id = ext_size + pre_id;
-
+        
         batch_id[i] = cur_id;
         pre_id = cur_id;
     }
@@ -1876,40 +1875,89 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     //SW
 #ifdef DEBUG_SW
     kstring_t str={0,0,0};
-
+    
     if(tid == 0&&start == 8000)
     {
-    kputs("sw_start_",&str);
-    kputl(start,&str);
-    kputc('_',&str);
-    kputl(tid,&str);
-    kputc('_',&str);
-    kputl(batch,&str);
-    kputs(".bin",&str);
-    store(g_srt,batch_id[batch],str.s);
+        kputs("sw_start_",&str);
+        kputl(start,&str);
+        kputc('_',&str);
+        kputl(tid,&str);
+        kputc('_',&str);
+        kputl(batch,&str);
+        kputs(".bin",&str);
+        store(g_srt,batch_id[batch],str.s);
     }
 #endif
-
+    
     ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
-
+    
 #ifdef DEBUG_SW
     if(tid == 0&&start == 8000)
     {
-    free(str.s);
-    str.l=0;
-    str.m=0;
-    str.s=0;
-    kputs("sw_end_",&str);
-    kputl(start,&str);
-    kputc('_',&str);
-    kputl(tid,&str);
-    kputc('_',&str);
-    kputl(batch,&str);
-    kputs(".bin",&str);
-    store(g_srt,batch_id[batch],str.s);
-    free(str.s);
+        free(str.s);
+        str.l=0;
+        str.m=0;
+        str.s=0;
+        kputs("sw_end_",&str);
+        kputl(start,&str);
+        kputc('_',&str);
+        kputl(tid,&str);
+        kputc('_',&str);
+        kputl(batch,&str);
+        kputs(".bin",&str);
+        store(g_srt,batch_id[batch],str.s);
+        free(str.s);
     }
 #endif
+    //finalize
+    for(int i=0; i<batch; i++)
+    {
+        qext_t* ext_val = ext_base+i;
+        size_t *ext_index = ext_val->index;
+        size_t ext_size = ext_index[chn_idx[i]];
+        
+        size_t ptr = batch_id[i];
+        
+        swrst_t * sws =getItem(ext_val,0);
+        memcpy(sws, g_srt+ptr, ext_size*sizeof(swrst_t));
+    }
+    
+    free(batch_id);
+    free(g_srt);
+}
+void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*getItem)(qext_t*,size_t), int start,  int tid)
+{
+    //init
+    size_t* batch_id = malloc((batch+1)*sizeof(size_t));
+    batch_id[0]=0;
+    size_t pre_id=0;
+    for(int i=1; i<=batch; i++)
+    {
+        qext_t* ext_val = ext_base+i-1;
+        size_t *ext_index = ext_val->index;
+        size_t ext_size = ext_index[chn_idx[i-1]];// a seed related swrst count
+        size_t cur_id = ext_size + pre_id;
+        batch_id[i] = cur_id;
+        pre_id = cur_id;
+    }
+    swrst_t* g_srt = malloc(batch_id[batch]*sizeof(swrst_t));
+    for(int i=0; i<batch; i++)
+    {
+        qext_t* ext_val = ext_base+i;
+        size_t *ext_index = ext_val->index;
+        size_t ext_size = ext_index[chn_idx[i]];
+        
+        size_t ptr = batch_id[i];
+        size_t idff = batch_id[i+1]-batch_id[i];
+        assert(idff == ext_size);
+        
+        swrst_t * sws =getItem(ext_val,0);
+        memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
+    }
+    //SW
+
+    ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+
     //finalize
     for(int i=0; i<batch; i++)
     {
@@ -1930,7 +1978,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
 static void worker_mod_batch(void *data, int start, int batch, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
-    qext_t* ext_base = &w->ext_val[batch*tid];
+    qext_t* ext_base = malloc(sizeof(qext_t)*batch);//&w->ext_val[batch*tid];
     //gen chains
     size_t * chn_idx = malloc(sizeof(size_t)*batch);
     mem_chain_v * local_chn = malloc(sizeof(mem_chain_v)*batch);
@@ -1982,6 +2030,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         w->regs[i] = regs;
         mem_chains2aln_finalize( local_chn[j], ext_val);
     }
+    free(ext_base);
     free(local_chn);
     free(chn_idx);
 }
@@ -2005,7 +2054,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	global_bns = bns;
 	w.regs = malloc(n * sizeof(mem_alnreg_v));
  //   w.chn = malloc(batch_size*opt->n_threads * sizeof(mem_chain_v));
-    w.ext_val=malloc(batch_size*opt->n_threads * sizeof(qext_t));
+ //   w.ext_val=malloc(batch_size*opt->n_threads * sizeof(qext_t));
     
 	w.opt = opt; w.bwt = bwt; w.bns = bns; w.pac = pac;
 	w.seqs = seqs; w.n_processed = n_processed;
@@ -2024,7 +2073,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     fprintf(stderr,"=====> Processing %d batchs of read iner <=====\n", batch_size);
     kt_for_batch2(opt->n_threads, batch_size, worker_mod_batch, &w, n);
     
-    free(w.ext_val);
+  //  free(w.ext_val);
 #ifdef DEBUG
     printcount();
     reset();
