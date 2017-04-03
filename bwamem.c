@@ -2046,6 +2046,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
     mem_chain_v *local_chn = malloc(sizeof(mem_chain_v)*batch);
+    mem_alnreg_v *local_regs = malloc(sizeof(mem_alnreg_v)*batch);
+    
     const mem_opt_t *opt = w->opt;
     const bntseq_t *bns = w->bns;
     const uint8_t *pac = w->pac;
@@ -2060,34 +2062,39 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         char *seq = w->seqs[i].seq;
         mem_chain_v chn = local_chn[j];
         
-        mem_alnreg_v regs;
-        kv_init(regs);
+        mem_alnreg_v* regs = local_regs+j;
+        kv_init(*regs);
         
         for (int i = 0; i < chn.n; ++i) {
             mem_chain_t *p = &chn.a[i];
             if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
-            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
+            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, regs);
             free(chn.a[i].seeds);
         }
         free(chn.a);
-        
-        regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
+//        local_regs[j]=regs;
+    }
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        char *seq = w->seqs[i].seq;
+        mem_alnreg_v* regs = local_regs+j;
+        regs->n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs->n, regs->a);
         if (bwa_verbose >= 4) {
-            err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
-            for (int i = 0; i < regs.n; ++i) {
-                mem_alnreg_t *p = &regs.a[i];
+            err_printf("* %ld chains remain after removing duplicated chains\n", regs->n);
+            for (int i = 0; i < regs->n; ++i) {
+                mem_alnreg_t *p = &regs->a[i];
                 printf("** %d, [%d,%d) <=> [%ld,%ld)\n", p->score, p->qb, p->qe, (long)p->rb, (long)p->re);
             }
         }
-        for (int i = 0; i < regs.n; ++i) {
-            mem_alnreg_t *p = &regs.a[i];
+        for (int i = 0; i < regs->n; ++i) {
+            mem_alnreg_t *p = &regs->a[i];
             if (p->rid >= 0 && bns->anns[p->rid].is_alt)
                 p->is_alt = 1;
         }
-        w->regs[i] = regs;
+        w->regs[i] = *regs;
     }
     free(local_chn);
-    
+    free(local_regs);
 }
 
 /*********************************************************/
