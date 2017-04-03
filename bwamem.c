@@ -2071,9 +2071,11 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, regs);
             free(chn.a[i].seeds);
         }
-        free(chn.a);
-//        local_regs[j]=regs;
     }
+    
+    
+
+
     for(int i=start, j=0; j<batch; j++,i++)
     {
         char *seq = w->seqs[i].seq;
@@ -2092,6 +2094,10 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 p->is_alt = 1;
         }
         w->regs[i] = *regs;
+    }
+    for(int j=0; j<batch; j++)
+    {
+        free(local_chn[j].a);
     }
     free(local_chn);
     free(local_regs);
