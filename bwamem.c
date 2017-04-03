@@ -2028,12 +2028,17 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         mem_chains2aln_postextent(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, local_chn[j], ext_val , &regs );
         //finalize
         w->regs[i] = regs;
+    }
+    for(int i=start,j=0; j<batch; ++j,++i)
+    {
+        qext_t* ext_val = ext_base+j;
         mem_chains2aln_finalize( local_chn[j], ext_val);
     }
     free(ext_base);
     free(local_chn);
     free(chn_idx);
 }
+
 /*********************************************************/
 /*********************************************************/
 /*this function is modified by Lingqi Zhang*/
