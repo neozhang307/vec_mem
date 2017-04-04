@@ -2051,9 +2051,13 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     const mem_opt_t *opt = w->opt;
     const bntseq_t *bns = w->bns;
     const uint8_t *pac = w->pac;
+    size_t * global_chn_id = malloc(sizeof(size_t)*(batch+1));
+    global_chn_id[0]=0;
     for(int i=start, j=0; j<batch; j++,i++)
     {
-        local_chn[j] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+        mem_chain_v tmp_chn = mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+        local_chn[j] = tmp_chn;
+        global_chn_id[j+1] = global_chn_id[j]+tmp_chn.n;
     }
     
     //initialize of SW
@@ -2063,8 +2067,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         kv_init(*regs);
     }
     //batch values:
-    int64_t* b_rmaxs = malloc(sizeof(int64_t)*2*batch);
-    
+
+    int64_t* g_rmaxs = malloc(sizeof(int64_t)*2*global_chn_id[batch]);
     
     for(int i=start, j=0; j<batch; j++,i++)
     {
@@ -2073,10 +2077,9 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         
         mem_chain_v chn = local_chn[j];
         mem_alnreg_v* regs = &local_regs[j];
-//        kv_init(*regs);
         
-        for (int i = 0; i < chn.n; ++i) {
-            mem_chain_t *p = &chn.a[i];
+        for (int l_chn_id = 0; l_chn_id < chn.n; ++l_chn_id) {
+            mem_chain_t *p = &chn.a[l_chn_id];
             //mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, regs);
             {//(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
                 int l_query = l_seq;
@@ -2090,7 +2093,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 uint8_t *rseq = 0;
                 uint64_t *srt;
                 
-                int64_t *rmax = &b_rmaxs[j*2];
+                int64_t *rmax = &g_rmaxs[(global_chn_id[j]+l_chn_id)*2];//&b_rmaxs[j*2];
                 /*
                  NEO:
                  @para rmax[2] {thread private}:
@@ -2136,7 +2139,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 for (k = c->n - 1; k >= 0; --k) {
                     mem_alnreg_t *a;
                     s = &c->seeds[(uint32_t)srt[k]];
-                    int64_t *rmax = &b_rmaxs[j*2];
+                    int64_t *rmax = &g_rmaxs[(global_chn_id[j]+l_chn_id)*2];//&b_rmaxs[j*2];
                     
                     
                     // NEO: this part is belong to CPU, should migrate this to the end of this function.
@@ -2185,8 +2188,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         if (bwa_verbose >= 4)
                             printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                     }
-                    
-                    
                     
                     a = kv_pushp(mem_alnreg_t, *av);
                     memset(a, 0, sizeof(mem_alnreg_t));
@@ -2298,7 +2299,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     }
     
     //finalize
-    free(b_rmaxs);
     for(int j=0; j<batch; j++)
     {
         mem_chain_v chn = local_chn[j];
@@ -2310,8 +2310,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     free(local_chn);
     free(local_regs);
     
-    
-    
+    free(global_chn_id);
+    free(g_rmaxs);
 }
 
 /*********************************************************/
