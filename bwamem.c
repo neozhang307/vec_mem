@@ -2108,6 +2108,9 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     int next_process = SW_batch;
     int left = max_c;
     //for(int g_c_id=0; g_c_id<max_c; g_c_id++)
+    
+    int *seeds_idx = malloc(sizeof(int)*SW_batch);
+    
     for(int seg_id=0; seg_id<seg; seg_id++)
     {
         next_process = next_process<left?next_process:left;
@@ -2176,13 +2179,14 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
          extend base on seeds.
          post process.
          */
-        for(int i=0; i<next_process; i++)//process batch of data
+        
+        for(int cur_process_id=0; cur_process_id<next_process; cur_process_id++)//process batch of data
         {
         // NEO: should do modification in this part in the future
         
             int64_t tmp;
             int max_off[2];
-            int g_c_id = SW_batch*seg_id+i;
+            int g_c_id = SW_batch*seg_id+cur_process_id;
             uint64_t *srt = global_srt[g_c_id];
             uint8_t *rseq = global_rseq[g_c_id];
             int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
@@ -2193,8 +2197,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             const mem_chain_t*c = p;
             int l_query = global_seqlen[g_c_id];//l_seq;
             const mem_seed_t *s;
-            for (int k = c->n - 1; k >= 0; --k) {
-                s = &c->seeds[(uint32_t)srt[k]];
+            for (seeds_idx[cur_process_id] = c->n - 1; seeds_idx[cur_process_id] >= 0; --seeds_idx[cur_process_id]) {
+                s = &c->seeds[(uint32_t)srt[seeds_idx[cur_process_id]]];
                 // NEO: this part is belong to CPU, should migrate this to the end of this function.
                 // Test if the seed is in future align
                 // NEO: Filter
@@ -2224,10 +2228,10 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
                             if (bwa_verbose >= 4)
                                 printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
-                                       k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+                                       seeds_idx[cur_process_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
                             
                             //NEO: block structure
-                            for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
+                            for (i = seeds_idx[cur_process_id] + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
                                 const mem_seed_t *t;
                                 if (srt[i] == 0) continue;
                                 t = &c->seeds[(uint32_t)srt[i]];
@@ -2237,11 +2241,11 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                             }
                             
                             if (i == c->n) { // no overlapping seeds; then skip extension
-                                srt[k] = 0; // mark that seed extension has not been performed
+                                srt[seeds_idx[cur_process_id]] = 0; // mark that seed extension has not been performed
                                 continue;
                             }
                             if (bwa_verbose >= 4)
-                                printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+                                printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", seeds_idx[cur_process_id]);
                         }
                     
                 //init the values used in SW extent
@@ -2256,7 +2260,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 //prepare SW operation here
                         
                 // MAIN SW
-                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
+                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", seeds_idx[cur_process_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
                 if (s->qbeg) { // left extension
                     uint8_t *rs, *qs;
                     int qle, tle, gtle, gscore;
@@ -2378,6 +2382,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     free(global_rseq);
     free(g_rmaxs);
     free(global_srt);
+    free(seeds_idx);
 }
 
 /*********************************************************/
