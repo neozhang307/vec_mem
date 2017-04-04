@@ -2070,43 +2070,51 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
 
     int64_t* g_rmaxs = malloc(sizeof(int64_t)*2*global_chn_id[batch]);
     mem_alnreg_v* global_regs = malloc(sizeof(mem_alnreg_v)*global_chn_id[batch]);
+
+//    swseq_t* g_forward = malloc(sizeof(swseq_t*)*global_chn_id[batch]);
+//    swseq_t* g_backward = malloc(sizeof(swseq_t*)*global_chn_id[batch]);
+//    
+//    swrst_t* g_swfwd = malloc(sizeof(swrst_t*)*global_chn_id[batch]);
+//    swrst_t* g_swbwd = malloc(sizeof(swrst_t*)*global_chn_id[batch]);
+//    
+    swseq_t * batch_swseq = malloc(sizeof(swseq_t)*batch);
+    swrst_t * batch_swfwd = malloc(sizeof(swrst_t)*batch);
     for(int i=0; i<global_chn_id[batch]; i++)
     {
         kv_init(global_regs[i]);
     }
+    uint64_t **global_srt = malloc(sizeof(uint64_t*)*batch);
+    uint8_t **global_rseq = malloc(sizeof(uint8_t*)*batch);
+    int*global_seqlen = malloc(sizeof(int)*batch);
+    char* * global_seq = malloc(sizeof(char*)*batch);
+    
     for(int i=start, j=0; j<batch; j++,i++)
     {
-        int l_seq =  w->seqs[i].l_seq;
-        char *seq = w->seqs[i].seq;
-        
-        mem_chain_v chn = local_chn[j];
-        
-        
-        for (int l_chn_id = 0; l_chn_id < chn.n; ++l_chn_id) {
+        global_seqlen[j] = w->seqs[i].l_seq;
+        global_seq[j] = w->seqs[i].seq;
+    }
+    
+    
+    for(int j=0; j<batch; j++)
+    {
+      //  int l_seq = global_seqlen[j];
+       // char *seq = global_seq[j];
+        mem_chain_v chn_v = local_chn[j];
+        for (int l_chn_id = 0; l_chn_id < chn_v.n; ++l_chn_id) {
             mem_alnreg_v* regs = &global_regs[(global_chn_id[j]+l_chn_id)];
-            
-            mem_chain_t *p = &chn.a[l_chn_id];
-            //mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, regs);
-            {//(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
-                int l_query = l_seq;
-                const uint8_t *query = (uint8_t*)seq;
-                const mem_chain_t *c = p;
-                mem_alnreg_v *av = regs;
+            mem_chain_t*p = &chn_v.a[l_chn_id];
+            {
+                int l_query = global_seqlen[j];//l_seq;
+                const uint8_t *query = (uint8_t*)global_seq[j];//seq;
+                const mem_chain_t*c = p;
+                mem_alnreg_v*av = regs;
                 int i, k, rid, max_off[2];// aw[2]; // aw: actual bandwidth used in extension
                 int64_t l_pac = bns->l_pac,/* rmax[2],*/ tmp, max = 0;
                 
                 const mem_seed_t *s;
-                uint8_t *rseq = 0;
-                uint64_t *srt;
                 
                 int64_t *rmax = &g_rmaxs[(global_chn_id[j]+l_chn_id)*2];//&b_rmaxs[j*2];
-                /*
-                 NEO:
-                 @para rmax[2] {thread private}:
-                 [0]: begin
-                 [1]: end
-                 */
-                
+               
                 if (c->n == 0) return;
                 // get the max possible span
                 // NEO: should set on CPU
@@ -2128,46 +2136,27 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     else rmax[0] = l_pac;
                 }
                 // retrieve the reference sequence
-                rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
+                uint8_t *rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
+                global_rseq[j]=rseq;
                 assert(c->rid == rid);
                 
                 // NEO:
                 // external sorting
                 // Generate str: str is an index,   high 32 bit is SW score (sorted)
                 //                                  low 32 bit is real index
-                srt = malloc(c->n * 8);
+                uint64_t * srt = malloc(c->n * 8);
+                global_srt[j] = srt;
                 for (i = 0; i < c->n; ++i)
                     srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
                 ks_introsort_64(c->n, srt);// NEO: srt in decending order
-                
-                
                 // NEO: should do modification in this part in the future
                 for (k = c->n - 1; k >= 0; --k) {
-                    mem_alnreg_t *a;
                     s = &c->seeds[(uint32_t)srt[k]];
                     int64_t *rmax = &g_rmaxs[(global_chn_id[j]+l_chn_id)*2];//&b_rmaxs[j*2];
                     
-                    
                     // NEO: this part is belong to CPU, should migrate this to the end of this function.
                     // Test if the seed is in future align
-//                    for (i = 0; i < av->n; ++i) { // test whether extension has been made before
-//                        mem_alnreg_t *p = &av->a[i];
-//                        int64_t rd;
-//                        int qd, w, max_gap;
-//                        if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
-//                        if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
-//                        // qd: distance ahead of the seed on query; rd: on reference
-//                        qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
-//                        max_gap = cal_max_gap(opt, qd < rd? qd : rd); // the maximal gap allowed in regions ahead of the seed
-//                        w = max_gap < p->w? max_gap : p->w; // bounded by the band width
-//                        if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
-//                        // similar to the previous four lines, but this time we look at the region behind
-//                        qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
-//                        max_gap = cal_max_gap(opt, qd < rd? qd : rd);
-//                        w = max_gap < p->w? max_gap : p->w;
-//                        if (qd - rd < w && rd - qd < w) break;
-//                    }
-                    
+                     // NEO: Filter
                     for (i = 0; i < av->n; ++i) { // test whether extension has been made before
                         mem_alnreg_t *p = &av->a[i];
                         int64_t rd;
@@ -2188,7 +2177,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         if (qd - rd < w && rd - qd < w) break;
                     }
                     
-                    
                     // NEO:
                     // rescue the seed marked as overlap, if it would lead to a different result
                     if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
@@ -2206,7 +2194,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                             if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
                         }
                         
-                        
                         if (i == c->n) { // no overlapping seeds; then skip extension
                             srt[k] = 0; // mark that seed extension has not been performed
                             continue;
@@ -2214,13 +2201,22 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         if (bwa_verbose >= 4)
                             printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                     }
-                    
-                    a = kv_pushp(mem_alnreg_t, *av);
+                
+                //init the values used in SW extent
+                
+                
+                
+                
+                    /**********************/
+                   // mem_alnreg_v*av = regs;
+                    mem_alnreg_t* a = kv_pushp(mem_alnreg_t, *av);
                     memset(a, 0, sizeof(mem_alnreg_t));
                     a->w  = opt->w;
                     a->score = a->truesc = -1;
                     a->rid = c->rid;
+                    //prepare SW operation here
                     
+                    // MAIN SW
                     if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
                     if (s->qbeg) { // left extension
                         uint8_t *rs, *qs;
@@ -2249,9 +2245,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         qe = s->qbeg + s->len;
                         re = s->rbeg + s->len - rmax[0];
                         assert(re >= 0);
-                        
                         //NEO: warp or block
-                        
                         a->score = ksw_extend2_mod(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
                         
                         // similar to the above
@@ -2275,6 +2269,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     
                     a->frac_rep = c->frac_rep;
                 }
+                
                 free(srt); free(rseq);
             }
         }
@@ -2294,7 +2289,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         }
     }
     free(global_regs);
-    
+    free(global_srt);
 
 
     for(int i=start, j=0; j<batch; j++,i++)
@@ -2328,7 +2323,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     }
     free(local_chn);
     free(local_regs);
-    
+    free(batch_swfwd);
+    free(batch_swseq);
     free(global_chn_id);
     free(g_rmaxs);
 }
