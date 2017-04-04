@@ -2056,16 +2056,22 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         local_chn[j] =mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
     }
     
+    //initialize of SW
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        mem_alnreg_v* regs = &local_regs[j];
+        kv_init(*regs);
+    }
     
     
     for(int i=start, j=0; j<batch; j++,i++)
     {
         int l_seq =  w->seqs[i].l_seq;
         char *seq = w->seqs[i].seq;
-        mem_chain_v chn = local_chn[j];
         
-        mem_alnreg_v* regs = local_regs+j;
-        kv_init(*regs);
+        mem_chain_v chn = local_chn[j];
+        mem_alnreg_v* regs = &local_regs[j];
+//        kv_init(*regs);
         
         for (int i = 0; i < chn.n; ++i) {
             mem_chain_t *p = &chn.a[i];
@@ -2109,9 +2115,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
                     else rmax[0] = l_pac;
                 }
-#ifdef DEBUG
-                add_count(rmax[1]-rmax[0]);
-#endif
                 // retrieve the reference sequence
                 rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
                 assert(c->rid == rid);
@@ -2130,6 +2133,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 for (k = c->n - 1; k >= 0; --k) {
                     mem_alnreg_t *a;
                     s = &c->seeds[(uint32_t)srt[k]];
+                    
                     
                     
                     // NEO: this part is belong to CPU, should migrate this to the end of this function.
@@ -2178,6 +2182,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         if (bwa_verbose >= 4)
                             printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                     }
+                    
+                    
                     
                     a = kv_pushp(mem_alnreg_t, *av);
                     memset(a, 0, sizeof(mem_alnreg_t));
