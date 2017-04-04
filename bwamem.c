@@ -2062,6 +2062,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         mem_alnreg_v* regs = &local_regs[j];
         kv_init(*regs);
     }
+    //batch values:
+    int64_t* b_rmaxs = malloc(sizeof(int64_t)*2*batch);
     
     
     for(int i=start, j=0; j<batch; j++,i++)
@@ -2082,12 +2084,13 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 const mem_chain_t *c = p;
                 mem_alnreg_v *av = regs;
                 int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
-                int64_t l_pac = bns->l_pac, rmax[2], tmp, max = 0;
+                int64_t l_pac = bns->l_pac,/* rmax[2],*/ tmp, max = 0;
+                
                 const mem_seed_t *s;
                 uint8_t *rseq = 0;
                 uint64_t *srt;
                 
-                
+                int64_t *rmax = &b_rmaxs[j*2];
                 /*
                  NEO:
                  @para rmax[2] {thread private}:
@@ -2133,7 +2136,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 for (k = c->n - 1; k >= 0; --k) {
                     mem_alnreg_t *a;
                     s = &c->seeds[(uint32_t)srt[k]];
-                    
+                    int64_t *rmax = &b_rmaxs[j*2];
                     
                     
                     // NEO: this part is belong to CPU, should migrate this to the end of this function.
@@ -2295,6 +2298,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     }
     
     //finalize
+    free(b_rmaxs);
     for(int j=0; j<batch; j++)
     {
         mem_chain_v chn = local_chn[j];
@@ -2305,6 +2309,9 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     }
     free(local_chn);
     free(local_regs);
+    
+    
+    
 }
 
 /*********************************************************/
