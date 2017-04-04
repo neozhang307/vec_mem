@@ -2041,6 +2041,10 @@ static void worker_mod_batch2(void *data, int start, int batch, int tid)
     free(local_chn);
     free(chn_idx);
 }
+//typedef struct
+//{
+//    
+//};
 typedef struct
 {
     size_t n, m;
@@ -2205,8 +2209,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 uint8_t *rseq = global_rseq[g_c_id];
                 int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
                 const uint8_t *query = (uint8_t*)global_seq[g_c_id];//seq;
-                mem_alnreg_v* regs = &global_regs[g_c_id];
-                mem_alnreg_v*av = regs;
+               // mem_alnreg_v* regs = ;
+                mem_alnreg_v*av = &global_regs[g_c_id];
                 mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
                 const mem_chain_t*c = p;
                 int l_query = global_seqlen[g_c_id];//l_seq;
@@ -2266,8 +2270,11 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         //init the values used in SW extent
                         kv_push(mem_seed_t, seed_nxt_process, *s);
                     }
+                }
+          //  }
                     /**********************/
                     // mem_alnreg_v*av = regs;
+                    if(seed_nxt_process.n==0)goto endwhile;
                     for(int cur_seed=0; cur_seed<seed_nxt_process.n; cur_seed++)
                     {
                         const mem_seed_t *s = &seed_nxt_process.a[cur_seed];
@@ -2277,12 +2284,9 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         a->score = a->truesc = -1;
                         a->rid = c->rid;
                         //prepare SW operation here
-                        
-                        
-                        
                        
                         // MAIN SW
-                        if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", seeds_idx[cur_process_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
+                       // if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", seeds_idx[cur_process_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
                         if (s->qbeg) { // left extension
                             uint8_t *rs, *qs;
                             int qle, tle, gtle, gscore;
@@ -2294,7 +2298,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
 
                             a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
                                     
-                                    // check whether we prefer to reach the end of the query
+                            // check whether we prefer to reach the end of the query
                             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
                                 a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
                                 a->truesc = a->score;
@@ -2332,13 +2336,14 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         }
                         a->seedlen0 = s->len;
                         a->frac_rep = c->frac_rep;
-                    seed_nxt_process.n=0;//set zero
+                        seed_nxt_process.n=0;//set zero
                     }
-                }
+            
 
-                
             }
+            
         }
+    endwhile:
         for(int i=0; i<next_process; i++)//process batch of data
         {
             {
