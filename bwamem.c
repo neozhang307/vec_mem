@@ -2044,7 +2044,7 @@ static void worker_mod_batch2(void *data, int start, int batch, int tid)
 //typedef struct
 //{
 //    
-//};
+//}sw_;
 typedef struct
 {
     size_t n, m;
@@ -2291,12 +2291,12 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                             uint8_t *rs, *qs;
                             int qle, tle, gtle, gscore;
                             qs = malloc(s->qbeg);
-                            for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
+                            for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];//query
                             tmp = s->rbeg - rmax[0];
                             rs = malloc(tmp);
-                            for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
+                            for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];//rseq
 
-                            a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
+                            a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);//max_off
                                     
                             // check whether we prefer to reach the end of the query
                             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
@@ -2335,9 +2335,10 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                                 a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
                         }
                         a->seedlen0 = s->len;
-                        a->frac_rep = c->frac_rep;
-                        seed_nxt_process.n=0;//set zero
-                    }
+                        a->frac_rep = c->frac_rep;//c
+                }
+                seed_nxt_process.n=0;//set zero
+
             
 
             }
