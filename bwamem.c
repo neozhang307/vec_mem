@@ -2101,178 +2101,184 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     }
     
     //for(int j=0; j<batch; j++)
-    for(int g_c_id=0; g_c_id<global_chn_id[batch]; g_c_id++)
+    int SW_batch = batch*2;
+    int max_c = global_chn_id[batch];
+    int seg = (max_c+SW_batch-1)/SW_batch;
+    int next_process = SW_batch;
+    int left = max_c;
+    //for(int g_c_id=0; g_c_id<max_c; g_c_id++)
+    for(int seg_id=0; seg_id<seg; seg_id++)
     {
-        mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
-        mem_alnreg_v* regs = &global_regs[g_c_id];
-        int l_query = global_seqlen[g_c_id];//l_seq;
-        const uint8_t *query = (uint8_t*)global_seq[g_c_id];//seq;
-        const mem_chain_t*c = p;
-        mem_alnreg_v*av = regs;
-        int i, k, rid, max_off[2];// aw[2]; // aw: actual bandwidth used in extension
-        int64_t l_pac = bns->l_pac,/* rmax[2],*/ tmp, max = 0;
-                
-        const mem_seed_t *s;
-        
-        int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
-        
-        if (c->n == 0) return;
-        // get the max possible span
-        // NEO: should set on CPU
-        // NEO: can we orgnize query by max possible span?
-        rmax[0] = l_pac<<1; rmax[1] = 0;
-        for (i = 0; i < c->n; ++i) {
-            int64_t b, e;
-            const mem_seed_t *t = &c->seeds[i];
-            b = t->rbeg - (t->qbeg + cal_max_gap(opt, t->qbeg));
-            e = t->rbeg + t->len + ((l_query - t->qbeg - t->len) + cal_max_gap(opt, l_query - t->qbeg - t->len));
-            rmax[0] = rmax[0] < b? rmax[0] : b;
-            rmax[1] = rmax[1] > e? rmax[1] : e;
-            if (t->len > max) max = t->len;
-        }
-        rmax[0] = rmax[0] > 0? rmax[0] : 0;
-        rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
-        if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
-            if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
-            else rmax[0] = l_pac;
-        }
-        // retrieve the reference sequence
-        uint8_t *rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
-        // global_rseq[j]=rseq;
-        assert(c->rid == rid);
-        
-                // NEO:
-                // external sorting
-                // Generate str: str is an index,   high 32 bit is SW score (sorted)
-                //                                  low 32 bit is real index
-        uint64_t * srt = malloc(c->n * 8);
-           //     global_srt[j] = srt;
-        for (i = 0; i < c->n; ++i)
-            srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
-        ks_introsort_64(c->n, srt);// NEO: srt in decending order
-        // NEO: should do modification in this part in the future
-        for (k = c->n - 1; k >= 0; --k) {
-            s = &c->seeds[(uint32_t)srt[k]];
+        next_process = next_process<left?next_process:left;
+        left-=SW_batch;
+        for(int i=0; i<next_process; i++)
+        {
+            int g_c_id = SW_batch*seg_id+i;
+            mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
+            mem_alnreg_v* regs = &global_regs[g_c_id];
+            int l_query = global_seqlen[g_c_id];//l_seq;
+            const uint8_t *query = (uint8_t*)global_seq[g_c_id];//seq;
+            const mem_chain_t*c = p;
+            mem_alnreg_v*av = regs;
+            int i, k, rid, max_off[2];// aw[2]; // aw: actual bandwidth used in extension
+            int64_t l_pac = bns->l_pac,/* rmax[2],*/ tmp, max = 0;
+                    
+            const mem_seed_t *s;
+            
             int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
-                    
-                    // NEO: this part is belong to CPU, should migrate this to the end of this function.
-                    // Test if the seed is in future align
-                     // NEO: Filter
-            for (i = 0; i < av->n; ++i) { // test whether extension has been made before
-                        mem_alnreg_t *p = &av->a[i];
-                        int64_t rd;
-                        int qd, w, max_gap, max_overlap;
-                        if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
-                        if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
-                        // qd: distance ahead of the seed on query; rd: on reference
-                        qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
-                        max_overlap = min(qd,rd);
-                        max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
-                        w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
-                        if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
-                        // similar to the previous four lines, but this time we look at the region behind
-                        qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
-                        max_overlap = min(qd,rd);
-                        max_gap = cal_max_gap(opt, max_overlap);
-                        w = max_gap-max_overlap;// < p->w? max_gap : p->w;
-                        if (qd - rd < w && rd - qd < w) break;
-                    }
-                    
-                    // NEO:
-                    // rescue the seed marked as overlap, if it would lead to a different result
-            if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
-                        if (bwa_verbose >= 4)
-                            printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
-                                   k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+            
+            if (c->n == 0) return;
+            // get the max possible span
+            // NEO: should set on CPU
+            // NEO: can we orgnize query by max possible span?
+            rmax[0] = l_pac<<1; rmax[1] = 0;
+            for (i = 0; i < c->n; ++i) {
+                int64_t b, e;
+                const mem_seed_t *t = &c->seeds[i];
+                b = t->rbeg - (t->qbeg + cal_max_gap(opt, t->qbeg));
+                e = t->rbeg + t->len + ((l_query - t->qbeg - t->len) + cal_max_gap(opt, l_query - t->qbeg - t->len));
+                rmax[0] = rmax[0] < b? rmax[0] : b;
+                rmax[1] = rmax[1] > e? rmax[1] : e;
+                if (t->len > max) max = t->len;
+            }
+            rmax[0] = rmax[0] > 0? rmax[0] : 0;
+            rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
+            if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
+                if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
+                else rmax[0] = l_pac;
+            }
+            // retrieve the reference sequence
+            uint8_t *rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
+            // global_rseq[j]=rseq;
+            assert(c->rid == rid);
+            
+            // NEO:
+            // external sorting
+            // Generate str: str is an index,   high 32 bit is SW score (sorted)
+            //                                  low 32 bit is real index
+            uint64_t * srt = malloc(c->n * 8);
+               //     global_srt[j] = srt;
+            for (i = 0; i < c->n; ++i)
+                srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
+            ks_introsort_64(c->n, srt);// NEO: srt in decending order
+            // NEO: should do modification in this part in the future
+            for (k = c->n - 1; k >= 0; --k) {
+                s = &c->seeds[(uint32_t)srt[k]];
+                int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
                         
-                        //NEO: block structure
-                        for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
-                            const mem_seed_t *t;
-                            if (srt[i] == 0) continue;
-                            t = &c->seeds[(uint32_t)srt[i]];
-                            if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
-                            if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
-                            if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
+                // NEO: this part is belong to CPU, should migrate this to the end of this function.
+                // Test if the seed is in future align
+                // NEO: Filter
+                for (i = 0; i < av->n; ++i) { // test whether extension has been made before
+                            mem_alnreg_t *p = &av->a[i];
+                            int64_t rd;
+                            int qd, w, max_gap, max_overlap;
+                            if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
+                            if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
+                            // qd: distance ahead of the seed on query; rd: on reference
+                            qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+                            max_overlap = min(qd,rd);
+                            max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
+                            w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
+                            if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
+                            // similar to the previous four lines, but this time we look at the region behind
+                            qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
+                            max_overlap = min(qd,rd);
+                            max_gap = cal_max_gap(opt, max_overlap);
+                            w = max_gap-max_overlap;// < p->w? max_gap : p->w;
+                            if (qd - rd < w && rd - qd < w) break;
                         }
                         
-                        if (i == c->n) { // no overlapping seeds; then skip extension
-                            srt[k] = 0; // mark that seed extension has not been performed
-                            continue;
+                // NEO:
+                // rescue the seed marked as overlap, if it would lead to a different result
+                if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
+                            if (bwa_verbose >= 4)
+                                printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
+                                       k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+                            
+                            //NEO: block structure
+                            for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
+                                const mem_seed_t *t;
+                                if (srt[i] == 0) continue;
+                                t = &c->seeds[(uint32_t)srt[i]];
+                                if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
+                                if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
+                                if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
+                            }
+                            
+                            if (i == c->n) { // no overlapping seeds; then skip extension
+                                srt[k] = 0; // mark that seed extension has not been performed
+                                continue;
+                            }
+                            if (bwa_verbose >= 4)
+                                printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                         }
-                        if (bwa_verbose >= 4)
-                            printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
-                    }
-                
+                    
                 //init the values used in SW extent
                 
-                
-                
-                
-                    /**********************/
-                   // mem_alnreg_v*av = regs;
-            mem_alnreg_t* a = kv_pushp(mem_alnreg_t, *av);
-            memset(a, 0, sizeof(mem_alnreg_t));
-            a->w  = opt->w;
-            a->score = a->truesc = -1;
-            a->rid = c->rid;
-                    //prepare SW operation here
-                    
-                    // MAIN SW
-            if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
-            if (s->qbeg) { // left extension
-                uint8_t *rs, *qs;
-                int qle, tle, gtle, gscore;
-                qs = malloc(s->qbeg);
-                for (i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
-                tmp = s->rbeg - rmax[0];
-                rs = malloc(tmp);
-                for (i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
+                /**********************/
+                // mem_alnreg_v*av = regs;
+                mem_alnreg_t* a = kv_pushp(mem_alnreg_t, *av);
+                memset(a, 0, sizeof(mem_alnreg_t));
+                a->w  = opt->w;
+                a->score = a->truesc = -1;
+                a->rid = c->rid;
+                //prepare SW operation here
+                        
+                // MAIN SW
+                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
+                if (s->qbeg) { // left extension
+                    uint8_t *rs, *qs;
+                    int qle, tle, gtle, gscore;
+                    qs = malloc(s->qbeg);
+                    for (i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
+                    tmp = s->rbeg - rmax[0];
+                    rs = malloc(tmp);
+                    for (i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
 
-                a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
+                    a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
+                            
+                            // check whether we prefer to reach the end of the query
+                    if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
+                        a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
+                        a->truesc = a->score;
+                    } else { // to-end extension
+                        a->qb = 0, a->rb = s->rbeg - gtle;
+                        a->truesc = gscore;
+                    }
+                    free(qs); free(rs);
+                } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
                         
-                        // check whether we prefer to reach the end of the query
-                if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
-                    a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
-                    a->truesc = a->score;
-                } else { // to-end extension
-                    a->qb = 0, a->rb = s->rbeg - gtle;
-                    a->truesc = gscore;
+                if (s->qbeg + s->len != l_query) { // right extension
+                    int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+                    qe = s->qbeg + s->len;
+                    re = s->rbeg + s->len - rmax[0];
+                    assert(re >= 0);
+                    //NEO: warp or block
+                    a->score = ksw_extend2_mod(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
+                            
+                            // similar to the above
+                    if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
+                        a->qe = qe + qle, a->re = rmax[0] + re + tle;
+                        a->truesc += a->score - sc0;
+                    } else { // to-end extension
+                        a->qe = l_query, a->re = rmax[0] + re + gtle;
+                        a->truesc += gscore - sc0;
+                    }
+                } else a->qe = l_query, a->re = s->rbeg + s->len;
+                       
+                        // compute seedcov
+                for (i = 0, a->seedcov = 0; i < c->n; ++i) {
+                    const mem_seed_t *t = &c->seeds[i];
+                    if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) // seed fully contained
+                        a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
                 }
-                free(qs); free(rs);
-            } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
-                    
-            if (s->qbeg + s->len != l_query) { // right extension
-                int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
-                qe = s->qbeg + s->len;
-                re = s->rbeg + s->len - rmax[0];
-                assert(re >= 0);
-                //NEO: warp or block
-                a->score = ksw_extend2_mod(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
-                        
-                        // similar to the above
-                if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
-                    a->qe = qe + qle, a->re = rmax[0] + re + tle;
-                    a->truesc += a->score - sc0;
-                } else { // to-end extension
-                    a->qe = l_query, a->re = rmax[0] + re + gtle;
-                    a->truesc += gscore - sc0;
-                }
-            } else a->qe = l_query, a->re = s->rbeg + s->len;
-                   
-                    // compute seedcov
-            for (i = 0, a->seedcov = 0; i < c->n; ++i) {
-                const mem_seed_t *t = &c->seeds[i];
-                if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) // seed fully contained
-                    a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
+                a->seedlen0 = s->len;
+                a->frac_rep = c->frac_rep;
             }
                     
-            a->seedlen0 = s->len;
-                    
-            a->frac_rep = c->frac_rep;
+            free(srt); free(rseq);
         }
-                
-        free(srt); free(rseq);
-            
         
     }
     
