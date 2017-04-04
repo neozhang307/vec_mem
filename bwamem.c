@@ -2087,7 +2087,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
    // uint8_t **global_rseq = malloc(sizeof(uint8_t*)*batch);
     int* global_seqlen = malloc(sizeof(int)*global_chn_id[batch]);
     char* * global_seq = malloc(sizeof(char*)*global_chn_id[batch]);
-    
+    uint8_t **global_rseq = malloc(sizeof(uint8_t*)*global_chn_id[batch]);
+     uint64_t ** global_srt = malloc(sizeof(uint64_t*)* global_chn_id[batch]);
     //expend the second loop
     for(int i=start, j=0; j<batch; j++,i++)
     {
@@ -2111,7 +2112,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     {
         next_process = next_process<left?next_process:left;
         left-=SW_batch;
-        for(int i=0; i<next_process; i++)
+        for(int i=0; i<next_process; i++)//process batch of data
         {
             int g_c_id = SW_batch*seg_id+i;
             mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
@@ -2149,6 +2150,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             }
             // retrieve the reference sequence
             uint8_t *rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
+            global_rseq[g_c_id] = rseq;
             // global_rseq[j]=rseq;
             assert(c->rid == rid);
             
@@ -2160,9 +2162,16 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                //     global_srt[j] = srt;
             for (i = 0; i < c->n; ++i)
                 srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
+            
             ks_introsort_64(c->n, srt);// NEO: srt in decending order
+            global_srt[g_c_id] = srt;
             // NEO: should do modification in this part in the future
+//        }
+//        for(int i=0; i<next_process; i++)//process batch of data
+//        {
             for (k = c->n - 1; k >= 0; --k) {
+                uint64_t * srt = global_srt[g_c_id];
+                uint8_t *rseq = global_rseq[g_c_id];
                 s = &c->seeds[(uint32_t)srt[k]];
                 int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
                         
@@ -2335,7 +2344,9 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
  //   free(batch_swseq);
     free(global_chn_id);
     free(global_chain_t);
+    free(global_rseq);
     free(g_rmaxs);
+    free(global_srt);
 }
 
 /*********************************************************/
