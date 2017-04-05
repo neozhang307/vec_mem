@@ -2209,7 +2209,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         }
         while(1)
         {
-            
             for(int cur_process_id=0; cur_process_id<next_process; cur_process_id++)//process batch of data
             {
             // NEO: should do modification in this part in the future
@@ -2224,7 +2223,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
                 const mem_chain_t*c = p;
                 int l_query = global_seqlen[g_c_id];//l_seq;
-                
                 
                 
                 for (; seeds_idx[cur_process_id] >= 0; --seeds_idx[cur_process_id]) {
@@ -2354,16 +2352,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     cur_seq_l->rlen = 0;
                 }
             }
-            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// left extension main SW
-            {
-                swrst_t* cur_srt_l = &b_sw_vals_left[cur_ptr];
-                swseq_t* cur_seq_l = cur_srt_l->sw_seq;
-                
-                    if (cur_seq_l->qlen!=0)//left extension main extension
-                    {// left extension
-                        cur_srt_l->score = ksw_extend2_mod(cur_seq_l->qlen, cur_seq_l->query, cur_seq_l->rlen, cur_seq_l->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt_l->h0, &cur_srt_l->qle, &cur_srt_l->tle, &cur_srt_l->gtle, &cur_srt_l->gscore, &cur_srt_l->max_off);//max_off
-                    }
-            }
+
+            ksw_extend_batch2(b_sw_vals_left, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
             for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// right extention init
             {
                 sw_itv_val tmp_sw_itv = sw_nxt_process.a[cur_ptr];
@@ -2400,15 +2390,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     cur_seq_r->rlen = 0;
                 }
             }
-            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// right extension main SW
-            {
-                swrst_t* cur_srt_r = &b_sw_vals_right[cur_ptr];
-                swseq_t* cur_seq_r = cur_srt_r->sw_seq;
-                if(cur_seq_r->qlen!=0)// right extension main
-                {
-                    cur_srt_r->score = ksw_extend2_mod(cur_seq_r->qlen, cur_seq_r->query, cur_seq_r->rlen, cur_seq_r->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt_r->h0, &cur_srt_r->qle, &cur_srt_r->tle, &cur_srt_r->gtle, &cur_srt_r->gscore, &cur_srt_r->max_off);//max_off
-                }
-            }
+
+            ksw_extend_batch2(b_sw_vals_right, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
             for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// post process (left & right)
             {
                 int max_off[2];
