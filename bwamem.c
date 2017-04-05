@@ -2337,7 +2337,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 // MAIN SW
                 if (s->qbeg) { // left extension
                     uint8_t *rs, *qs;
-                    int qle, tle, gtle, gscore;
+                    
                     qs = malloc(s->qbeg);
                     for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];//query
                     tmp = s->rbeg - rmax[0];
@@ -2349,14 +2349,18 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     cur_seq->query = qs;
                     cur_seq->rlen = tmp;
                     cur_seq->ref = rs;
-                    
-                    //cur_srt->sw_seq=cur_seq;
                     cur_srt->h0 = s->len * opt->a;
-                    
+                }
+                if (s->qbeg) {// left extension
+                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
+                    swseq_t* cur_seq = cur_srt->sw_seq;
                     cur_srt->score = ksw_extend2_mod(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt->h0, &cur_srt->qle, &cur_srt->tle, &cur_srt->gtle, &cur_srt->gscore, &cur_srt->max_off);//max_off
-                    
-                    
+                }
+                if (s->qbeg) {// left extension
+                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
+                    swseq_t* cur_seq = cur_srt->sw_seq;
                     a->score = cur_srt->score;
+                    int qle, tle, gtle, gscore;
                     qle = cur_srt->qle;
                     tle = cur_srt->tle;
                     gtle = cur_srt->gtle;
@@ -2371,21 +2375,18 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         a->qb = 0, a->rb = s->rbeg - gtle;
                         a->truesc = gscore;
                     }
+                    uint8_t *rs, *qs;
+                    rs = (uint8_t *)cur_seq->ref;
+                    qs = (uint8_t *)cur_seq->query;
                     free(qs); free(rs);
-                } else
+                }
+                else
                 {
                     a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
-                    
-//                    swseq_t* cur_seq = &b_sw_seq_left[cur_ptr];
-//                    cur_seq->qlen = 0;
-//                    cur_seq->query = NULL;
-//                    cur_seq->rlen = 0;
-//                    cur_seq->ref = NULL;
                     swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
-                    //cur_srt->sw_seq=cur_seq;
                     cur_srt->score = s->len * opt->a;
-                    
                 }
+                
                 if (s->qbeg + s->len != l_query) { // right extension
                     int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
                     qe = s->qbeg + s->len;
