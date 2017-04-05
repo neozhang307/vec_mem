@@ -2566,6 +2566,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     free(global_chn_id);
     free(global_chain_t);
     free(global_rseq);
+    free(global_seqlen);
+    free(global_seq);
     free(g_rmaxs);
     free(global_srt);
     free(seeds_idx);
