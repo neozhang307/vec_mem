@@ -2352,7 +2352,6 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     cur_seq_l->rlen = 0;
                 }
             }
-
             ksw_extend_batch2(b_sw_vals_left, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
             for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// right extention init
             {
