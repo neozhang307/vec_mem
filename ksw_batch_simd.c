@@ -1271,11 +1271,11 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         
         //fprintf(stderr,"check%d\n",qp2[0]);
         const uint8_t* query =seq->query;
-        for (int k = 0, m = 0; k < m; ++k) {
+        for (int k = 0, l = 0; k < m; ++k) {
             const int8_t *p = &mat[k*m];
             int j = 0;
-            for (; j < qlen; ++j) qp2[m++] = p[query[j]];
-            for(;j<aligned; ++j) qp2[m++]=p[5];
+            for (; j < qlen; ++j) qp2[l++] = p[query[j]];
+            for(;j<aligned; ++j) qp2[l++]=p[5];
         }
     }
 #ifdef SWBATCHDB
