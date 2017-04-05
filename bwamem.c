@@ -2334,6 +2334,10 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 a->rid = c->rid;
                 //prepare SW operation here
                
+                
+                swrst_t* cur_srt_l = &b_sw_vals_left[cur_ptr];
+                swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+                
                 // MAIN SW
                 if (s->qbeg) { // left extension
                     uint8_t *rs, *qs;
@@ -2343,29 +2347,30 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     tmp = s->rbeg - rmax[0];
                     rs = malloc(tmp);
                     for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];//rseq
-                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
-                    swseq_t* cur_seq = cur_srt->sw_seq;
-                    cur_seq->qlen = s->qbeg;
-                    cur_seq->query = qs;
-                    cur_seq->rlen = tmp;
-                    cur_seq->ref = rs;
-                    cur_srt->h0 = s->len * opt->a;
+//                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
+//                    swseq_t* cur_seq = cur_srt->sw_seq;
+                    cur_seq_l->qlen = s->qbeg;
+                    cur_seq_l->query = qs;
+                    cur_seq_l->rlen = tmp;
+                    cur_seq_l->ref = rs;
+                    cur_srt_l->h0 = s->len * opt->a;
                 }
-                if (s->qbeg) {// left extension
-                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
-                    swseq_t* cur_seq = cur_srt->sw_seq;
-                    cur_srt->score = ksw_extend2_mod(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt->h0, &cur_srt->qle, &cur_srt->tle, &cur_srt->gtle, &cur_srt->gscore, &cur_srt->max_off);//max_off
+                else{
+                    cur_seq_l->qlen = 0;//NEO: just set a flag
+                    cur_seq_l->rlen = 0;
                 }
-                if (s->qbeg) {// left extension
-                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
-                    swseq_t* cur_seq = cur_srt->sw_seq;
-                    a->score = cur_srt->score;
+                if (cur_seq_l->qlen!=0)//main extension
+                {// left extension
+                    cur_srt_l->score = ksw_extend2_mod(cur_seq_l->qlen, cur_seq_l->query, cur_seq_l->rlen, cur_seq_l->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt_l->h0, &cur_srt_l->qle, &cur_srt_l->tle, &cur_srt_l->gtle, &cur_srt_l->gscore, &cur_srt_l->max_off);//max_off
+                }
+                if (cur_seq_l->qlen!=0) {// left extension
+                    a->score = cur_srt_l->score;
                     int qle, tle, gtle, gscore;
-                    qle = cur_srt->qle;
-                    tle = cur_srt->tle;
-                    gtle = cur_srt->gtle;
-                    gscore = cur_srt->gscore;
-                    max_off[0]=cur_srt->max_off;
+                    qle = cur_srt_l->qle;
+                    tle = cur_srt_l->tle;
+                    gtle = cur_srt_l->gtle;
+                    gscore = cur_srt_l->gscore;
+                    max_off[0]=cur_srt_l->max_off;
                     
                     // check whether we prefer to reach the end of the query
                     if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
@@ -2376,42 +2381,56 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         a->truesc = gscore;
                     }
                     uint8_t *rs, *qs;
-                    rs = (uint8_t *)cur_seq->ref;
-                    qs = (uint8_t *)cur_seq->query;
+                    rs = (uint8_t *)cur_seq_l->ref;
+                    qs = (uint8_t *)cur_seq_l->query;
                     free(qs); free(rs);
                 }
                 else
                 {
                     a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
-                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
-                    cur_srt->score = s->len * opt->a;
+                   // swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
+                    cur_srt_l->score = s->len * opt->a;
                 }
                 
+                
+                swrst_t* cur_srt_r = &b_sw_vals_right[cur_ptr];
+                swseq_t* cur_seq_r = cur_srt_r->sw_seq;
                 if (s->qbeg + s->len != l_query) { // right extension
-                    int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+//                    int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+                    int qe,re;
                     qe = s->qbeg + s->len;
                     re = s->rbeg + s->len - rmax[0];
                     assert(re >= 0);
                     //NEO: warp or block
-                    swrst_t* cur_srt = &b_sw_vals_right[cur_ptr];
-                    swseq_t* cur_seq = cur_srt->sw_seq;
-                    cur_seq->qlen = l_query - qe;
-                    cur_seq->query = query + qe;
-                    cur_seq->rlen = rmax[1] - rmax[0] - re;
-                    cur_seq->ref = rseq + re;
-//                    cur_srt->sw_seq=cur_seq;
-                    cur_srt->h0 = b_sw_vals_left[cur_ptr].score;
-                    
-                    cur_srt->score = ksw_extend2_mod(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt->h0, &cur_srt->qle, &cur_srt->tle, &cur_srt->gtle, &cur_srt->gscore, &cur_srt->max_off);//max_off
-                    
-                    a->score = cur_srt->score;
-                    qle = cur_srt->qle;
-                    tle = cur_srt->tle;
-                    gtle = cur_srt->gtle;
-                    gscore = cur_srt->gscore;
-                    max_off[1]=cur_srt->max_off;
-                    
-                    
+                  //  swrst_t* cur_srt_r = &b_sw_vals_right[cur_ptr];
+                  //  swseq_t* cur_seq_r = cur_srt_r->sw_seq;
+                    cur_seq_r->qlen = l_query - qe;
+                    cur_seq_r->query = query + qe;
+                    cur_seq_r->rlen = rmax[1] - rmax[0] - re;
+                    cur_seq_r->ref = rseq + re;
+                    cur_srt_r->h0 = b_sw_vals_left[cur_ptr].score;
+                }
+                else{
+                    cur_seq_r->qlen = 0;
+                    cur_seq_r->rlen = 0;
+                }
+                if(cur_seq_r->qlen!=0)// right extension main
+                {
+                    cur_srt_r->score = ksw_extend2_mod(cur_seq_r->qlen, cur_seq_r->query, cur_seq_r->rlen, cur_seq_r->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt_r->h0, &cur_srt_r->qle, &cur_srt_r->tle, &cur_srt_r->gtle, &cur_srt_r->gscore, &cur_srt_r->max_off);//max_off
+                }
+                
+                if(cur_seq_r->qlen!=0)//right extension post process
+                {
+                    int qle, tle, qe, re, gtle, gscore;
+                    int sc0=cur_srt_r->h0;
+                    a->score = cur_srt_r->score;
+                    qle = cur_srt_r->qle;
+                    tle = cur_srt_r->tle;
+                    gtle = cur_srt_r->gtle;
+                    gscore = cur_srt_r->gscore;
+                    max_off[1]=cur_srt_r->max_off;
+                    qe = s->qbeg + s->len;
+                    re = s->rbeg + s->len - rmax[0];
                             // similar to the above
                     if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
                         a->qe = qe + qle, a->re = rmax[0] + re + tle;
@@ -2420,8 +2439,11 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         a->qe = l_query, a->re = rmax[0] + re + gtle;
                         a->truesc += gscore - sc0;
                     }
-                } else a->qe = l_query, a->re = s->rbeg + s->len;
-                       
+                }
+                else
+                {
+                    a->qe = l_query, a->re = s->rbeg + s->len;
+                }
                         // compute seedcov
                 int i;
                 for (i = 0, a->seedcov = 0; i < c->n; ++i) {
