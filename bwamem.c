@@ -2302,7 +2302,17 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             swrst_t* b_sw_vals_left = malloc(sizeof(swrst_t)*sw_nxt_process.n);
             swseq_t* b_sw_seq_right = malloc(sizeof(swseq_t)*sw_nxt_process.n);
             swrst_t* b_sw_vals_right = malloc(sizeof(swrst_t)*sw_nxt_process.n);
-            
+            memset(b_sw_seq_left, 0, sizeof(swseq_t));
+            memset(b_sw_seq_right, 0, sizeof(swseq_t));
+            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)
+            {
+                swseq_t* cur_seq = &b_sw_seq_right[cur_ptr];
+                swrst_t* cur_srt = &b_sw_vals_right[cur_ptr];
+                cur_srt->sw_seq=cur_seq;
+                cur_seq = &b_sw_seq_left[cur_ptr];
+                cur_srt = &b_sw_vals_left[cur_ptr];
+                cur_srt->sw_seq=cur_seq;
+            }
             for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)
             {
                 int64_t tmp;
@@ -2333,13 +2343,14 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     tmp = s->rbeg - rmax[0];
                     rs = malloc(tmp);
                     for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];//rseq
-                    swseq_t* cur_seq = &b_sw_seq_left[cur_ptr];
+                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
+                    swseq_t* cur_seq = cur_srt->sw_seq;
                     cur_seq->qlen = s->qbeg;
                     cur_seq->query = qs;
                     cur_seq->rlen = tmp;
                     cur_seq->ref = rs;
-                    swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
-                    cur_srt->sw_seq=cur_seq;
+                    
+                    //cur_srt->sw_seq=cur_seq;
                     cur_srt->h0 = s->len * opt->a;
                     
                     cur_srt->score = ksw_extend2_mod(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt->h0, &cur_srt->qle, &cur_srt->tle, &cur_srt->gtle, &cur_srt->gscore, &cur_srt->max_off);//max_off
@@ -2365,13 +2376,13 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 {
                     a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
                     
-                    swseq_t* cur_seq = &b_sw_seq_left[cur_ptr];
-                    cur_seq->qlen = 0;
-                    cur_seq->query = NULL;
-                    cur_seq->rlen = 0;
-                    cur_seq->ref = NULL;
+//                    swseq_t* cur_seq = &b_sw_seq_left[cur_ptr];
+//                    cur_seq->qlen = 0;
+//                    cur_seq->query = NULL;
+//                    cur_seq->rlen = 0;
+//                    cur_seq->ref = NULL;
                     swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
-                    cur_srt->sw_seq=cur_seq;
+                    //cur_srt->sw_seq=cur_seq;
                     cur_srt->score = s->len * opt->a;
                     
                 }
@@ -2381,13 +2392,13 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     re = s->rbeg + s->len - rmax[0];
                     assert(re >= 0);
                     //NEO: warp or block
-                    swseq_t* cur_seq = &b_sw_seq_right[cur_ptr];
+                    swrst_t* cur_srt = &b_sw_vals_right[cur_ptr];
+                    swseq_t* cur_seq = cur_srt->sw_seq;
                     cur_seq->qlen = l_query - qe;
                     cur_seq->query = query + qe;
                     cur_seq->rlen = rmax[1] - rmax[0] - re;
                     cur_seq->ref = rseq + re;
-                    swrst_t* cur_srt = &b_sw_vals_right[cur_ptr];
-                    cur_srt->sw_seq=cur_seq;
+//                    cur_srt->sw_seq=cur_seq;
                     cur_srt->h0 = b_sw_vals_left[cur_ptr].score;
                     
                     cur_srt->score = ksw_extend2_mod(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, cur_srt->h0, &cur_srt->qle, &cur_srt->tle, &cur_srt->gtle, &cur_srt->gscore, &cur_srt->max_off);//max_off
