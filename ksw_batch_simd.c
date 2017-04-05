@@ -103,13 +103,13 @@ size_t load(swrst_t** data, const char* filename)
     fclose(input);
     return size;
 }
-static const int g_m = 5;
-static int8_t g_mat[5][5];
-static int g_o_del;
-static int g_e_del;
-static int g_o_ins;
-static int g_e_ins;
-static int g_zdrop;
+//static const int g_m = 5;
+//static int8_t g_mat[5][5];
+//static int g_o_del;
+//static int g_e_del;
+//static int g_o_ins;
+//static int g_e_ins;
+//static int g_zdrop;
 
 void finalize_load(swrst_t*data,size_t size)
 {
@@ -129,77 +129,77 @@ void finalize_load(swrst_t*data,size_t size)
     free(data);
 }
 
-void load_config()
-{
-    FILE* confile = fopen("sw.config","rb");
-    if(confile==NULL)
-        return;
-    fread(g_mat, sizeof(int8_t), 25, confile);
-    fread(&g_o_del, sizeof(int), 1, confile);
-    fread(&g_e_del, sizeof(int), 1, confile);
-    fread(&g_o_ins, sizeof(int), 1, confile);
-    fread(&g_e_ins, sizeof(int), 1, confile);
-    fread(&g_zdrop, sizeof(int), 1, confile);
-    fclose(confile);
-}
+//void load_config()
+//{
+//    FILE* confile = fopen("sw.config","rb");
+//    if(confile==NULL)
+//        return;
+//    fread(g_mat, sizeof(int8_t), 25, confile);
+//    fread(&g_o_del, sizeof(int), 1, confile);
+//    fread(&g_e_del, sizeof(int), 1, confile);
+//    fread(&g_o_ins, sizeof(int), 1, confile);
+//    fread(&g_e_ins, sizeof(int), 1, confile);
+//    fread(&g_zdrop, sizeof(int), 1, confile);
+//    fclose(confile);
+//}
+//
+//void store_config()
+//{
+//    FILE* confile = fopen("sw.config","wb+");
+//    if(confile==NULL)
+//        return;
+//    fwrite(g_mat, sizeof(int8_t), 25, confile);
+//    fwrite(&g_o_del, sizeof(int), 1, confile);
+//    fwrite(&g_e_del, sizeof(int), 1, confile);
+//    fwrite(&g_o_ins, sizeof(int), 1, confile);
+//    fwrite(&g_e_ins, sizeof(int), 1, confile);
+//    fwrite(&g_zdrop, sizeof(int), 1, confile);
+//    fclose(confile);
+//}
 
-void store_config()
-{
-    FILE* confile = fopen("sw.config","wb+");
-    if(confile==NULL)
-        return;
-    fwrite(g_mat, sizeof(int8_t), 25, confile);
-    fwrite(&g_o_del, sizeof(int), 1, confile);
-    fwrite(&g_e_del, sizeof(int), 1, confile);
-    fwrite(&g_o_ins, sizeof(int), 1, confile);
-    fwrite(&g_e_ins, sizeof(int), 1, confile);
-    fwrite(&g_zdrop, sizeof(int), 1, confile);
-    fclose(confile);
-}
-
-void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
-{
-    assert(m==5);
-    memcpy(g_mat,mat,sizeof(int8_t)*25);
-    g_o_del = o_del;
-    g_e_del = e_del;
-    g_o_ins = o_ins;
-    g_e_ins = e_ins;
-    g_zdrop = zdrop;
-}
-int check_config(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
-{
-    if(m!=5)
-    {
-        return -1;
-    }
-    if(o_del!=g_o_del)
-    {
-        return -2;
-    }
-    if(e_del!=g_e_del)
-    {
-        return -3;
-    }
-    if(o_ins!=g_o_ins)
-    {
-        return -5;
-    }
-    if(e_ins!=g_e_ins)
-    {
-        return -6;
-    }
-    if(zdrop!=g_zdrop)
-    {
-        return -7;
-    }
-    for(int i=0; i<25; i++)
-    {
-        if(g_mat[0][i]!=mat[i])
-            return -1*i*10;
-    }
-    return 1;
-}
+//void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+//{
+//    assert(m==5);
+//    memcpy(g_mat,mat,sizeof(int8_t)*25);
+////    g_o_del = o_del;
+////    g_e_del = e_del;
+////    g_o_ins = o_ins;
+////    g_e_ins = e_ins;
+////    g_zdrop = zdrop;
+//}
+//int check_config(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+//{
+//    if(m!=5)
+//    {
+//        return -1;
+//    }
+//    if(o_del!=g_o_del)
+//    {
+//        return -2;
+//    }
+//    if(e_del!=g_e_del)
+//    {
+//        return -3;
+//    }
+//    if(o_ins!=g_o_ins)
+//    {
+//        return -5;
+//    }
+//    if(e_ins!=g_e_ins)
+//    {
+//        return -6;
+//    }
+//    if(zdrop!=g_zdrop)
+//    {
+//        return -7;
+//    }
+//    for(int i=0; i<25; i++)
+//    {
+//        if(g_mat[0][i]!=mat[i])
+//            return -1*i*10;
+//    }
+//    return 1;
+//}
 void printcmp(swrst_t* a, swrst_t*b, size_t size);
 
 
@@ -388,6 +388,9 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
+                   
+                   int m,
+                   
                    int o_del,
                    int e_del,
                    int o_ins,
@@ -473,8 +476,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     {
         const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
         
-        const int16_t *qp_batch = qp_db +g_m*que_batch_global_id;
-        const int16_t *qp_batch_nxt = qp_batch + g_m*grid_process_batch_idx*8*que_align;
+        const int16_t *qp_batch = qp_db +m*que_batch_global_id;
+        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
         
         //process 8 query at a time for int16_t
         v_h0=_mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
@@ -558,7 +561,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
             {
                 
-                int qp_ptr2 = process_batch_id*g_m*que_align+t_targets[process_batch_id] * que_align;
+                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
                 
                 memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
                 qp_buff_nxt+=que_align;
@@ -794,6 +797,9 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
+                   
+                    int m,
+                    
                    int o_del,
                    int e_del,
                    int o_ins,
@@ -825,8 +831,8 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
     {
         const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
  
-        const int16_t *qp_batch = qp_db +g_m*que_batch_global_id;
-        const int16_t *qp_batch_nxt = qp_batch + g_m*grid_process_batch_idx*8*que_align;
+        const int16_t *qp_batch = qp_db +m*que_batch_global_id;
+        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
         
         //process 8 query at a time for int16_t
         uint16_t qlens[8];
@@ -905,7 +911,7 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
             for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
             {
              
-                int qp_ptr2 = process_batch_id*g_m*que_align+t_targets[process_batch_id] * que_align;
+                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
                 
                 memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
                 qp_buff_nxt+=que_align;
@@ -1241,8 +1247,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         }
     }
 #endif
-    int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*g_m*sizeof(int16_t));//should be usingned ,change in the future
-    memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*g_m);
+    int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*m*sizeof(int16_t));//should be usingned ,change in the future
+    memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*m);
 #ifdef SWBATCHDB
     start = clock();
 #endif
@@ -1261,12 +1267,12 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         int aligned = que_hash_cur_ptr->alined;
         
         //fprintf(stderr,"global_batch_id %ld, local_id_y %d, align %d \n",que_hash_t->global_batch_id,que_hash_t->local_id_y,que_hash_t->alined);
-        int16_t* qp2 = qp_db+g_m*(que_hash_cur_ptr->global_batch_id+que_hash_cur_ptr->local_id_y*que_hash_cur_ptr->alined);
+        int16_t* qp2 = qp_db+m*(que_hash_cur_ptr->global_batch_id+que_hash_cur_ptr->local_id_y*que_hash_cur_ptr->alined);
         
         //fprintf(stderr,"check%d\n",qp2[0]);
         const uint8_t* query =seq->query;
-        for (int k = 0, m = 0; k < g_m; ++k) {
-            const int8_t *p = g_mat[k];
+        for (int k = 0, m = 0; k < m; ++k) {
+            const int8_t *p = &mat[k*m];
             int j = 0;
             for (; j < qlen; ++j) qp2[m++] = p[query[j]];
             for(;j<aligned; ++j) qp2[m++]=p[5];
@@ -1329,6 +1335,9 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
                             rdb_rev,
                             qp_db,
                             g_h0,//input
+                      
+                            m,
+                      
                             o_del,
                             e_del,
                             o_ins,

@@ -1958,7 +1958,7 @@ void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_
         memcpy(g_srt+ptr, sws, ext_size*sizeof(swrst_t));
     }
     //SW
-
+    //init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
     ksw_extend_batch(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
 
     //finalize
