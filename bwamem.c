@@ -2041,15 +2041,25 @@ static void worker_mod_batch2(void *data, int start, int batch, int tid)
     free(local_chn);
     free(chn_idx);
 }
-//typedef struct
-//{
-//    
-//}sw_;
+typedef struct
+{
+    mem_alnreg_v*av;
+    mem_seed_t* s;
+    
+    const mem_chain_t*c;
+    int64_t *rmax;
+    
+    uint8_t *rseq;
+    const uint8_t *query ;
+    
+    int l_query;
+    
+}sw_itv_val;
 typedef struct
 {
     size_t n, m;
-    mem_seed_t* a;
-}mem_seed_v;
+    sw_itv_val* a;
+}sw_itv_vec;
 
 static void worker_mod_batch(void *data, int start, int batch, int tid)
 {
@@ -2119,8 +2129,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     //for(int g_c_id=0; g_c_id<max_c; g_c_id++)
     
     int *seeds_idx = malloc(sizeof(int)*SW_batch);
-    mem_seed_v seed_nxt_process;
-    kv_init(seed_nxt_process);
+    sw_itv_vec sw_nxt_process;
+    kv_init(sw_nxt_process);
   //  int *seeds_end = malloc(sizeof(int)*SW_batch);
     
     for(int seg_id=0; seg_id<seg; seg_id++)
@@ -2196,14 +2206,13 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             int g_c_id = SW_batch*seg_id+cur_process_id;
             seeds_idx[cur_process_id] = global_chain_t[g_c_id].n-1;
         }
-//        while(true)
+        while(1)
         {
             
             for(int cur_process_id=0; cur_process_id<next_process; cur_process_id++)//process batch of data
             {
             // NEO: should do modification in this part in the future
-                int64_t tmp;
-                int max_off[2];
+
                 int g_c_id = SW_batch*seg_id+cur_process_id;
                 uint64_t *srt = global_srt[g_c_id];
                 uint8_t *rseq = global_rseq[g_c_id];
@@ -2214,6 +2223,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
                 const mem_chain_t*c = p;
                 int l_query = global_seqlen[g_c_id];//l_seq;
+                
+                
                 
                 for (; seeds_idx[cur_process_id] >= 0; --seeds_idx[cur_process_id]) {
                     {
@@ -2266,83 +2277,97 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                                     if (bwa_verbose >= 4)
                                         printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", seeds_idx[cur_process_id]);
                                 }
-                            
+                        sw_itv_val tmp_sw_itv;
+                        tmp_sw_itv.s = s;
+                        tmp_sw_itv.av = av;
+                        tmp_sw_itv.query = query;
+                        tmp_sw_itv.rseq = rseq;
+                        tmp_sw_itv.c = c;
+                        tmp_sw_itv.l_query = l_query;
+                        tmp_sw_itv.rmax=rmax;
                         //init the values used in SW extent
-                        kv_push(mem_seed_t, seed_nxt_process, *s);
+                        kv_push(sw_itv_val, sw_nxt_process, tmp_sw_itv);
                     }
                 }
-          //  }
-                    /**********************/
-                    // mem_alnreg_v*av = regs;
-                    if(seed_nxt_process.n==0)goto endwhile;
-                    for(int cur_seed=0; cur_seed<seed_nxt_process.n; cur_seed++)
-                    {
-                        const mem_seed_t *s = &seed_nxt_process.a[cur_seed];
-                        mem_alnreg_t* a = kv_pushp(mem_alnreg_t, *av);
-                        memset(a, 0, sizeof(mem_alnreg_t));
-                        a->w  = opt->w;
-                        a->score = a->truesc = -1;
-                        a->rid = c->rid;
-                        //prepare SW operation here
-                       
-                        // MAIN SW
-                       // if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", seeds_idx[cur_process_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
-                        if (s->qbeg) { // left extension
-                            uint8_t *rs, *qs;
-                            int qle, tle, gtle, gscore;
-                            qs = malloc(s->qbeg);
-                            for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];//query
-                            tmp = s->rbeg - rmax[0];
-                            rs = malloc(tmp);
-                            for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];//rseq
-
-                            a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);//max_off
-                                    
-                            // check whether we prefer to reach the end of the query
-                            if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
-                                a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
-                                a->truesc = a->score;
-                            } else { // to-end extension
-                                a->qb = 0, a->rb = s->rbeg - gtle;
-                                a->truesc = gscore;
-                            }
-                            free(qs); free(rs);
-                        } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
-                                
-                        if (s->qbeg + s->len != l_query) { // right extension
-                            int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
-                            qe = s->qbeg + s->len;
-                            re = s->rbeg + s->len - rmax[0];
-                            assert(re >= 0);
-                            //NEO: warp or block
-                            a->score = ksw_extend2_mod(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
-                                    
-                                    // similar to the above
-                            if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
-                                a->qe = qe + qle, a->re = rmax[0] + re + tle;
-                                a->truesc += a->score - sc0;
-                            } else { // to-end extension
-                                a->qe = l_query, a->re = rmax[0] + re + gtle;
-                                a->truesc += gscore - sc0;
-                            }
-                        } else a->qe = l_query, a->re = s->rbeg + s->len;
-                               
-                                // compute seedcov
-                        int i;
-                        for (i = 0, a->seedcov = 0; i < c->n; ++i) {
-                            const mem_seed_t *t = &c->seeds[i];
-                            if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) // seed fully contained
-                                a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
-                        }
-                        a->seedlen0 = s->len;
-                        a->frac_rep = c->frac_rep;//c
-                }
-                seed_nxt_process.n=0;//set zero
-
-            
-
             }
+                    /**********************/
+            if(sw_nxt_process.n==0)goto endwhile;
+                    // mem_alnreg_v*av = regs;
             
+            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)
+            {
+                int64_t tmp;
+                int max_off[2];
+                sw_itv_val tmp_sw_itv = sw_nxt_process.a[cur_ptr];
+                mem_alnreg_v*av = tmp_sw_itv.av;
+                mem_seed_t* s = tmp_sw_itv.s;
+                const mem_chain_t* c = tmp_sw_itv.c;
+                const uint8_t *query =tmp_sw_itv.query;
+                uint8_t *rseq=tmp_sw_itv.rseq;
+                int l_query = tmp_sw_itv.l_query;
+                int64_t* rmax = tmp_sw_itv.rmax;
+                
+                //const mem_seed_t *s = &sw_nxt_process.a[cur_ptr];
+                mem_alnreg_t* a = kv_pushp(mem_alnreg_t, *av);
+                memset(a, 0, sizeof(mem_alnreg_t));
+                a->w  = opt->w;
+                a->score = a->truesc = -1;
+                a->rid = c->rid;
+                //prepare SW operation here
+               
+                // MAIN SW
+               // if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", seeds_idx[cur_process_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
+                if (s->qbeg) { // left extension
+                    uint8_t *rs, *qs;
+                    int qle, tle, gtle, gscore;
+                    qs = malloc(s->qbeg);
+                    for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];//query
+                    tmp = s->rbeg - rmax[0];
+                    rs = malloc(tmp);
+                    for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];//rseq
+
+                    a->score = ksw_extend2_mod(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);//max_off
+                            
+                    // check whether we prefer to reach the end of the query
+                    if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
+                        a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
+                        a->truesc = a->score;
+                    } else { // to-end extension
+                        a->qb = 0, a->rb = s->rbeg - gtle;
+                        a->truesc = gscore;
+                    }
+                    free(qs); free(rs);
+                } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
+                        
+                if (s->qbeg + s->len != l_query) { // right extension
+                    int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+                    qe = s->qbeg + s->len;
+                    re = s->rbeg + s->len - rmax[0];
+                    assert(re >= 0);
+                    //NEO: warp or block
+                    a->score = ksw_extend2_mod(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
+                            
+                            // similar to the above
+                    if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
+                        a->qe = qe + qle, a->re = rmax[0] + re + tle;
+                        a->truesc += a->score - sc0;
+                    } else { // to-end extension
+                        a->qe = l_query, a->re = rmax[0] + re + gtle;
+                        a->truesc += gscore - sc0;
+                    }
+                } else a->qe = l_query, a->re = s->rbeg + s->len;
+                       
+                        // compute seedcov
+                int i;
+                for (i = 0, a->seedcov = 0; i < c->n; ++i) {
+                    const mem_seed_t *t = &c->seeds[i];
+                    if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) // seed fully contained
+                        a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
+                }
+                a->seedlen0 = s->len;
+                a->frac_rep = c->frac_rep;//c
+            }
+            sw_nxt_process.n=0;//set zero
         }
     endwhile:
         for(int i=0; i<next_process; i++)//process batch of data
@@ -2415,7 +2440,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     free(g_rmaxs);
     free(global_srt);
     free(seeds_idx);
-    free(seed_nxt_process.a);
+    free(sw_nxt_process.a);
    // free(seeds_end);
 }
 
