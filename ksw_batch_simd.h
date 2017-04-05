@@ -32,9 +32,9 @@ size_t load(swrst_t** data, const char* file);
 
 void finalize_load(swrst_t*data,size_t size);
 
-void load_config();
-void store_config();
-void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
+//void load_config();
+//void store_config();
+//void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
 
 uint8_t printdif(swrst_t* a, swrst_t*b, size_t size);
-int check_config(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
+//int check_config(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
