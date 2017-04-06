@@ -1471,57 +1471,62 @@ void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8
         // NEO:
         // should know how many seed would be drop in this place
         // Test if the seed is in future align
-        for (i = 0; i < av->n; ++i) { // test whether extension has been made before
-            mem_alnreg_t *p = &av->a[i];
-            int64_t rd;
-            int qd, w, max_gap, max_overlap;
-            if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
-            if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
-            // qd: distance ahead of the seed on query; rd: on reference
-            qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
-            max_overlap = min(qd,rd);
-            assert(qd>=0);
-            max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
-          //  fprintf(stderr, "1 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
-            w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
-            if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
-            // similar to the previous four lines, but this time we look at the region behind
-            qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
-            max_overlap = min(qd,rd);
-            max_gap = cal_max_gap(opt, max_overlap);
-          //  fprintf(stderr, "2 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
-            w = max_gap-max_overlap;// < p->w? max_gap : p->w;
-            if (qd - rd < w && rd - qd < w) break;
-        }
-   //     fprintf(stderr, "break is %d/%d", i<av->n,i);
-        // NEO:
-        // rescue the seed marked as overlap, if it would lead to a different result
-        if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
-            if (bwa_verbose >= 4)
-                printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
-                       k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
-            
-            //NEO: block structure
-            for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
-                const mem_seed_t *t;
-                if (srt[i] == 0) continue;
-                t = &c->seeds[(uint32_t)srt[i]];
-                if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
-                if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
-                if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
-            }
-            
-            
-            if (i == c->n) { // no overlapping seeds; then skip extension
-                srt[k] = 0; // mark that seed extension has not been performed
-                continue;
-            }
-            if (bwa_verbose >= 4)
-                printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
-        }
         
         a = kv_pushp(mem_alnreg_t, *av);
         memcpy(a, a_pre, sizeof(mem_alnreg_t));
+        continue;
+        
+//        for (i = 0; i < av->n; ++i) { // test whether extension has been made before
+//            mem_alnreg_t *p = &av->a[i];
+//            int64_t rd;
+//            int qd, w, max_gap, max_overlap;
+//            if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
+//            if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
+//            // qd: distance ahead of the seed on query; rd: on reference
+//            qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+//            max_overlap = min(qd,rd);
+//            assert(qd>=0);
+//            max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
+//          //  fprintf(stderr, "1 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
+//            w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
+//            if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
+//            // similar to the previous four lines, but this time we look at the region behind
+//            qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
+//            max_overlap = min(qd,rd);
+//            max_gap = cal_max_gap(opt, max_overlap);
+//          //  fprintf(stderr, "2 qd %d, rd %d, max_gap %d\n",qd,rd,max_gap);
+//            w = max_gap-max_overlap;// < p->w? max_gap : p->w;
+//            if (qd - rd < w && rd - qd < w) break;
+//        }
+//   //     fprintf(stderr, "break is %d/%d", i<av->n,i);
+//        // NEO:
+//        // rescue the seed marked as overlap, if it would lead to a different result
+//        if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
+//            if (bwa_verbose >= 4)
+//                printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
+//                       k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+//            
+//            //NEO: block structure
+//            for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
+//                const mem_seed_t *t;
+//                if (srt[i] == 0) continue;
+//                t = &c->seeds[(uint32_t)srt[i]];
+//                if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
+//                if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
+//                if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
+//            }
+//            
+//            
+//            if (i == c->n) { // no overlapping seeds; then skip extension
+//                srt[k] = 0; // mark that seed extension has not been performed
+//                continue;
+//            }
+//            if (bwa_verbose >= 4)
+//                printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+//        }
+//        
+//        a = kv_pushp(mem_alnreg_t, *av);
+//        memcpy(a, a_pre, sizeof(mem_alnreg_t));
         
     }
     free(srt);
