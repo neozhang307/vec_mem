@@ -1221,15 +1221,15 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
 #ifdef SWBATCHDB
     start = clock();
 #endif
-    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
-    {
-        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
-        uint8_t* db_ptr = rdb + ref_hash_t->global_batch_id;
-        uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
-        int x = BATCHSIZE;
-        int y = ref_hash_t->alined;
-        transpose_8(db_ptr, db_rev_ptr, x, y);
-    }
+//    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
+//    {
+//        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
+//        uint8_t* db_ptr = rdb + ref_hash_t->global_batch_id;
+//        uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
+//        int x = BATCHSIZE;
+//        int y = ref_hash_t->alined;
+//        transpose_8(db_ptr, db_rev_ptr, x, y);
+//    }
 #ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"ref transpose time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
@@ -1564,24 +1564,24 @@ int main()
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
 
-    swrst_t* rsrt;
-    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
-    assert(rread==nread);
-    fprintf(stdout,"the latter result is correct\n");
- //   printf("the result is %d\n", cmp(nsrt,rsrt,nread));
-    uint8_t check = printdif(nsrt,rsrt,process_sze);
-   if(check==0)
-    {
-        fprintf(stderr,"the check result is correct\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
-    else
-    {
-        fprintf(stderr,"the check result is incorrect\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
+//    swrst_t* rsrt;
+//    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
+//    assert(rread==nread);
+//    fprintf(stdout,"the latter result is correct\n");
+// //   printf("the result is %d\n", cmp(nsrt,rsrt,nread));
+//    uint8_t check = printdif(nsrt,rsrt,process_sze);
+//   if(check==0)
+//    {
+//        fprintf(stderr,"the check result is correct\n");
+//        fprintf(stderr,"which is 0x%02x\n",check);
+//    }
+//    else
+//    {
+//        fprintf(stderr,"the check result is incorrect\n");
+//        fprintf(stderr,"which is 0x%02x\n",check);
+//    }
     finalize_load(nsrt,nread);
-    finalize_load(rsrt,rread);
+//    finalize_load(rsrt,rread);
     return 0;
 }
 #endif
