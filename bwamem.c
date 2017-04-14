@@ -1933,7 +1933,10 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     free(batch_id);
     free(g_srt);
 }
-
+//#define DEBUG_SW
+#ifdef DEBUG_SW
+static int save_sw = 0;
+#endif
 void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*getItem)(qext_t*,size_t), int start,  int tid)
 {
     //init
@@ -1965,6 +1968,25 @@ void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_
     }
     //SW
     //init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+
+#ifdef DEBUG_SW
+    kstring_t str={0,0,0};
+    
+    if(tid == 0&&save_sw == 0)
+    {
+        int size = 1000;
+        assert(size<=batch_id[batch]);
+        save_sw++;
+        kputs("sw_start_",&str);
+        kputl(start,&str);
+        kputc('_',&str);
+        kputl(tid,&str);
+        kputc('_',&str);
+        kputl(size,&str);
+        kputs(".bin",&str);
+        store(g_srt,size,str.s);
+    }
+#endif
     ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
 
     //finalize
