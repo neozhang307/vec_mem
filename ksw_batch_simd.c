@@ -560,16 +560,16 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         //    memcpy(t_targets, target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*PROCESSBATCH, PROCESSBATCH*sizeof(uint8_t));
             const uint8_t *t_targets =target_batch+(grid_process_batch_idx*PROCESSBATCH)*ref_hash->alined;
             int16_t* qp_buff_nxt = qp_buff;
-            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
-            {
-                
-//                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
-                int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
-
-                memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
-                qp_buff_nxt+=que_align;
-                
-            }
+//            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
+//            {
+//                
+////                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
+//                int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
+//
+//                memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
+//                qp_buff_nxt+=que_align;
+//                
+//            }
          //   transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
              __m128i v_i = _mm_set1_epi16(i);
             /***********************/
@@ -613,10 +613,14 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                     
                     int16_t q_rev_b[PROCESSBATCH];
                     //memcpy(q_rev_b, q_rev+j*PROCESSBATCH, PROCESSBATCH*sizeof(int16_t));
-                    for(int l = 0; l<PROCESSBATCH; l++)
+                    for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
                     {
 //                        q_rev_b[l]=qp_buff_rev[j*PROCESSBATCH+l];
-                        q_rev_b[l]=qp_buff[j + l*que_align];
+                        int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
+                        int16_t * qptmp = qp_batch_nxt+qp_ptr2;
+                        q_rev_b[process_batch_id]=qptmp[j];
+
+//                        q_rev_b[process_batch_id]=qp_buff[j + process_batch_id*que_align];
 
                     }
                     
