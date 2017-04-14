@@ -129,7 +129,7 @@ void finalize_load(swrst_t*data,size_t size)
     free(data);
 }
 
-void load_config(const int *mat, int *o_del, int *e_del, int *o_ins, int *e_ins, int *zdrop)
+void load_config( int8_t *mat, int *o_del, int *e_del, int *o_ins, int *e_ins, int *zdrop)
 {
     FILE* confile = fopen("sw.config","rb");
     if(confile==NULL)
@@ -143,7 +143,7 @@ void load_config(const int *mat, int *o_del, int *e_del, int *o_ins, int *e_ins,
     fclose(confile);
 }
 
-void store_config(const int *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+void store_config(const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
     FILE* confile = fopen("sw.config","wb+");
     if(confile==NULL)
@@ -1539,15 +1539,15 @@ double realtime()
 
 int main()
 {
-    static const int g_m = 5;
-    static int8_t g_mat[5][5];
-    static int g_o_del;
-    static int g_e_del;
-    static int g_o_ins;
-    static int g_e_ins;
-    static int g_zdrop;
+     const int g_m = 5;
+     int8_t g_mat[5][5];
+     int g_o_del;
+     int g_e_del;
+     int g_o_ins;
+     int g_e_ins;
+     int g_zdrop;
     
-    load_config(g_mat[0], &g_o_del, &g_e_del, &g_o_ins, &g_e_ins, &g_zdrop);
+    load_config(&g_mat[0][0], &g_o_del, &g_e_del, &g_o_ins, &g_e_ins, &g_zdrop);
     swrst_t* nsrt;
     size_t nread = load(&nsrt,"sw_start_8000_0_2000.bin");
     
@@ -1561,7 +1561,24 @@ int main()
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
 
+    swrst_t* rsrt;
+    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
+    assert(rread==nread);
+    fprintf(stdout,"the latter result is correct\n");
+    printf("the result is %d\n", cmp(nsrt,rsrt,nread));
+    uint8_t check = printdif(nsrt,rsrt,process_sze);
+   if(check==0)
+    {
+        fprintf(stderr,"the check result is correct\n");
+        fprintf(stderr,"which is 0x%02x\n",check);
+    }
+    else
+    {
+        fprintf(stderr,"the check result is incorrect\n");
+        fprintf(stderr,"which is 0x%02x\n",check);
+    }
     finalize_load(nsrt,nread);
+    finalize_load(rsrt,rread);
     return 0;
 }
 #endif
