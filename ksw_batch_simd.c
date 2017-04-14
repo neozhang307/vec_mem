@@ -129,33 +129,33 @@ void finalize_load(swrst_t*data,size_t size)
     free(data);
 }
 
-//void load_config()
-//{
-//    FILE* confile = fopen("sw.config","rb");
-//    if(confile==NULL)
-//        return;
-//    fread(g_mat, sizeof(int8_t), 25, confile);
-//    fread(&g_o_del, sizeof(int), 1, confile);
-//    fread(&g_e_del, sizeof(int), 1, confile);
-//    fread(&g_o_ins, sizeof(int), 1, confile);
-//    fread(&g_e_ins, sizeof(int), 1, confile);
-//    fread(&g_zdrop, sizeof(int), 1, confile);
-//    fclose(confile);
-//}
-//
-//void store_config()
-//{
-//    FILE* confile = fopen("sw.config","wb+");
-//    if(confile==NULL)
-//        return;
-//    fwrite(g_mat, sizeof(int8_t), 25, confile);
-//    fwrite(&g_o_del, sizeof(int), 1, confile);
-//    fwrite(&g_e_del, sizeof(int), 1, confile);
-//    fwrite(&g_o_ins, sizeof(int), 1, confile);
-//    fwrite(&g_e_ins, sizeof(int), 1, confile);
-//    fwrite(&g_zdrop, sizeof(int), 1, confile);
-//    fclose(confile);
-//}
+void load_config(const int *mat, int *o_del, int *e_del, int *o_ins, int *e_ins, int *zdrop)
+{
+    FILE* confile = fopen("sw.config","rb");
+    if(confile==NULL)
+        return;
+    fread(mat, sizeof(int8_t), 25, confile);
+    fread(o_del, sizeof(int), 1, confile);
+    fread(e_del, sizeof(int), 1, confile);
+    fread(o_ins, sizeof(int), 1, confile);
+    fread(e_ins, sizeof(int), 1, confile);
+    fread(zdrop, sizeof(int), 1, confile);
+    fclose(confile);
+}
+
+void store_config(const int *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+{
+    FILE* confile = fopen("sw.config","wb+");
+    if(confile==NULL)
+        return;
+    fwrite(mat, sizeof(int8_t), 25, confile);
+    fwrite(&o_del, sizeof(int), 1, confile);
+    fwrite(&e_del, sizeof(int), 1, confile);
+    fwrite(&o_ins, sizeof(int), 1, confile);
+    fwrite(&e_ins, sizeof(int), 1, confile);
+    fwrite(&zdrop, sizeof(int), 1, confile);
+    fclose(confile);
+}
 
 //void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 //{
@@ -1514,6 +1514,7 @@ void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int
         }
     }
 }
+//#define SWBATCHDB
 #ifdef SWBATCHDB
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -1538,7 +1539,15 @@ double realtime()
 
 int main()
 {
-    load_config();
+    static const int g_m = 5;
+    static int8_t g_mat[5][5];
+    static int g_o_del;
+    static int g_e_del;
+    static int g_o_ins;
+    static int g_e_ins;
+    static int g_zdrop;
+    
+    load_config(g_mat[0], &g_o_del, &g_e_del, &g_o_ins, &g_e_ins, &g_zdrop);
     swrst_t* nsrt;
     size_t nread = load(&nsrt,"sw_start_8000_0_2000.bin");
     
@@ -1552,24 +1561,24 @@ int main()
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
 
-    swrst_t* rsrt;
-    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
-    assert(rread==nread);
-    fprintf(stdout,"the latter result is correct\n");
+//    swrst_t* rsrt;
+//    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
+ //   assert(rread==nread);
+  //  fprintf(stdout,"the latter result is correct\n");
     //printf("the result is %d\n", cmp(nsrt,rsrt,nread));
-    uint8_t check = printdif(nsrt,rsrt,process_sze);
-    if(check==0)
-    {
-        fprintf(stderr,"the check result is correct\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
-    else
-    {
-        fprintf(stderr,"the check result is incorrect\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
+  //  uint8_t check = printdif(nsrt,rsrt,process_sze);
+  // if(check==0)
+   // {
+    //    fprintf(stderr,"the check result is correct\n");
+     //   fprintf(stderr,"which is 0x%02x\n",check);
+   // }
+   // else
+    //{
+      //  fprintf(stderr,"the check result is incorrect\n");
+       // fprintf(stderr,"which is 0x%02x\n",check);
+   // }
     finalize_load(nsrt,nread);
-    finalize_load(rsrt,rread);
+   // finalize_load(rsrt,rread);
     return 0;
 }
 #endif
