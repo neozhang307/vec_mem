@@ -570,7 +570,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 qp_buff_nxt+=que_align;
                 
             }
-            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+         //   transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
              __m128i v_i = _mm_set1_epi16(i);
             /***********************/
             uint16_t j;
@@ -611,6 +611,15 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                         //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
                         //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
                     
+                    int16_t q_rev_b[PROCESSBATCH];
+                    //memcpy(q_rev_b, q_rev+j*PROCESSBATCH, PROCESSBATCH*sizeof(int16_t));
+                    for(int l = 0; l<PROCESSBATCH; l++)
+                    {
+//                        q_rev_b[l]=qp_buff_rev[j*PROCESSBATCH+l];
+                        q_rev_b[l]=qp_buff[j + l*que_align];
+
+                    }
+                    
                     v_M = v_hs[j];
                     v_e = v_es[j];
 
@@ -618,7 +627,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                     
                     cond =_mm_cmpeq_epi16(v_M,v_zero);
                     cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                    __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev)+j);
+                    __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev_b));
                     falsecase = _mm_adds_epi16(v_M, tmp_qp);
                     cmp_gen_result(cond, v_zero, falsecase, tmp_out_true, tmp_out_false, v_M);
                    
