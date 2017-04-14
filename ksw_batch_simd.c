@@ -385,7 +385,7 @@ void show(const char* str, int16_t* buffer, __m128i input)
 }
 
 void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
-                   uint8_t* rdb_rev,
+                   uint8_t* rdb,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
                    
@@ -474,7 +474,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
-        const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
+        const uint8_t *target_batch =  rdb+ref_batch_global_id;
         
         const int16_t *qp_batch = qp_db +m*que_batch_global_id;
         const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
@@ -555,14 +555,17 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             __max_8(max_end, tmplen);
             //end possition should be updated
             /***********keep***********/
-            uint8_t t_targets[8];
-            memcpy(t_targets,target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*8,8*sizeof(uint8_t));
+      //      uint8_t t_targets[8];
+            
+        //    memcpy(t_targets, target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*PROCESSBATCH, PROCESSBATCH*sizeof(uint8_t));
+            const uint8_t *t_targets =target_batch+(grid_process_batch_idx*PROCESSBATCH)*ref_hash->alined;
             int16_t* qp_buff_nxt = qp_buff;
             for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
             {
                 
-                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
-                
+//                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
+                int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
+
                 memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
                 qp_buff_nxt+=que_align;
                 
@@ -1332,7 +1335,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         }
         //process 16 query at a time
         batch_sw_core(ref_hash_batch_ptr,que_hash_batch_ptr,
-                            rdb_rev,
+                            rdb,
                             qp_db,
                             g_h0,//input
                       
