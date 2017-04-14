@@ -385,7 +385,7 @@ void show(const char* str, int16_t* buffer, __m128i input)
 }
 
 void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
-                   uint8_t* rdb,
+                   uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
                    
@@ -474,7 +474,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
-        const uint8_t *target_batch =  rdb+ref_batch_global_id;
+        const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
         
         const int16_t *qp_batch = qp_db +m*que_batch_global_id;
         const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
@@ -555,11 +555,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             __max_8(max_end, tmplen);
             //end possition should be updated
             /***********keep***********/
-      //      uint8_t t_targets[8];
+            uint8_t t_targets[8];
             
-        //    memcpy(t_targets, target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*PROCESSBATCH, PROCESSBATCH*sizeof(uint8_t));
-            const uint8_t *t_targets =target_batch+(grid_process_batch_idx*PROCESSBATCH)*ref_hash->alined;
-            int16_t* qp_buff_nxt = qp_buff;
+            memcpy(t_targets, target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*PROCESSBATCH, PROCESSBATCH*sizeof(uint8_t));
+           // const uint8_t *t_targets =target_batch+(grid_process_batch_idx*PROCESSBATCH)*ref_hash->alined;
+    //        int16_t* qp_buff_nxt = qp_buff;
 //            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
 //            {
 //                
@@ -584,7 +584,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 v_m_l = v_zero;
                 v_mj_l = v_zero;
                 
-                const  int16_t *q_rev = qp_buff_rev;
+             //   const  int16_t *q_rev = qp_buff_rev;
                 // compute the first column
                 if ( min_beg == 0) {
                     __m128i tval = _mm_set1_epi16((o_del + e_del * (i + 1)));
@@ -616,8 +616,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                     for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
                     {
 //                        q_rev_b[l]=qp_buff_rev[j*PROCESSBATCH+l];
-                        int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
-                        int16_t * qptmp = qp_batch_nxt+qp_ptr2;
+//                        int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
+                        int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
+                        const int16_t * qptmp = qp_batch_nxt+qp_ptr2;
                         q_rev_b[process_batch_id]=qptmp[j];
 
 //                        q_rev_b[process_batch_id]=qp_buff[j + process_batch_id*que_align];
@@ -1234,15 +1235,15 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
 #ifdef SWBATCHDB
     start = clock();
 #endif
-//    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
-//    {
-//        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
-//        uint8_t* db_ptr = rdb + ref_hash_t->global_batch_id;
-//        uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
-//        int x = BATCHSIZE;
-//        int y = ref_hash_t->alined;
-//        transpose_8(db_ptr, db_rev_ptr, x, y);
-//    }
+    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
+    {
+        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
+        uint8_t* db_ptr = rdb + ref_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
+        int x = BATCHSIZE;
+        int y = ref_hash_t->alined;
+        transpose_8(db_ptr, db_rev_ptr, x, y);
+    }
 #ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"ref transpose time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
@@ -1348,7 +1349,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         }
         //process 16 query at a time
         batch_sw_core(ref_hash_batch_ptr,que_hash_batch_ptr,
-                            rdb,
+                            rdb_rev,
                             qp_db,
                             g_h0,//input
                       
