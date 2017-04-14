@@ -1446,6 +1446,7 @@ void mem_chain2aln_post(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t
 }
 #define min(a,b) a<b?a:b
 #define max(a,b) a>b?a:b
+//cannot remove. because the real av is sequenced
 void mem_chain2aln_filter(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_t *av_firstpass, mem_alnreg_v *av)
 {
     int i, k;
