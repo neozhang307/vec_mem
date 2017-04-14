@@ -559,7 +559,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             
         //    memcpy(t_targets, target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*PROCESSBATCH, PROCESSBATCH*sizeof(uint8_t));
             const uint8_t *t_targets =target_batch+(grid_process_batch_idx*PROCESSBATCH)*ref_hash->alined;
-            int16_t* qp_buff_nxt = qp_buff;
+//            int16_t* qp_buff_nxt = qp_buff;
 //            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
 //            {
 //                
@@ -584,7 +584,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 v_m_l = v_zero;
                 v_mj_l = v_zero;
                 
-                const  int16_t *q_rev = qp_buff_rev;
+//                const  int16_t *q_rev = qp_buff_rev;
                 // compute the first column
                 if ( min_beg == 0) {
                     __m128i tval = _mm_set1_epi16((o_del + e_del * (i + 1)));
@@ -617,7 +617,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                     {
 //                        q_rev_b[l]=qp_buff_rev[j*PROCESSBATCH+l];
                         int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
-                        int16_t * qptmp = qp_batch_nxt+qp_ptr2;
+                        const int16_t * qptmp = qp_batch_nxt+qp_ptr2;
                         q_rev_b[process_batch_id]=qptmp[j];
 
 //                        q_rev_b[process_batch_id]=qp_buff[j + process_batch_id*que_align];
