@@ -1565,7 +1565,7 @@ int main()
     size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
     assert(rread==nread);
     fprintf(stdout,"the latter result is correct\n");
-    printf("the result is %d\n", cmp(nsrt,rsrt,nread));
+ //   printf("the result is %d\n", cmp(nsrt,rsrt,nread));
     uint8_t check = printdif(nsrt,rsrt,process_sze);
    if(check==0)
     {
