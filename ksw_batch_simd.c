@@ -1561,24 +1561,24 @@ int main()
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
 
-    swrst_t* rsrt;
-    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
-    assert(rread==nread);
-    fprintf(stdout,"the latter result is correct\n");
- //   printf("the result is %d\n", cmp(nsrt,rsrt,nread));
-    uint8_t check = printdif(nsrt,rsrt,process_sze);
-   if(check==0)
-    {
-        fprintf(stderr,"the check result is correct\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
-    else
-    {
-        fprintf(stderr,"the check result is incorrect\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
+//    swrst_t* rsrt;
+//    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
+//    assert(rread==nread);
+//    fprintf(stdout,"the latter result is correct\n");
+// //   printf("the result is %d\n", cmp(nsrt,rsrt,nread));
+//    uint8_t check = printdif(nsrt,rsrt,process_sze);
+//   if(check==0)
+//    {
+//        fprintf(stderr,"the check result is correct\n");
+//        fprintf(stderr,"which is 0x%02x\n",check);
+//    }
+//    else
+//    {
+//        fprintf(stderr,"the check result is incorrect\n");
+//        fprintf(stderr,"which is 0x%02x\n",check);
+//    }
     finalize_load(nsrt,nread);
-    finalize_load(rsrt,rread);
+//    finalize_load(rsrt,rread);
     return 0;
 }
 #endif
