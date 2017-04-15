@@ -1941,7 +1941,7 @@ typedef struct{
     swrst_t* a;
 }swrst_v;
 static swrst_v g_sw;
-static int data_size=5000;
+static int data_size=1000;
 static int qlenthreashold = 0;
 static int data_count = 0;
 #endif
@@ -1987,29 +1987,47 @@ void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_
         
         if(data_count<data_size)
         {
-            for(int i=0; i<batch_id[batch]; i++)
+            int i=0;
+            for(; i<batch_id[batch]; i++)
             {
                 if(g_srt[i].sw_seq->qlen>qlenthreashold)
                 {
                     kv_push(swrst_t, g_sw, g_srt[i]);
                     data_count++;
+                    if(data_count>=data_size)
+                        break;
                 }
+ //               else{
+   //                 fprintf(stderr,"now %d\n", data_count);
+  //                  data_count=0;
+     //           }
+            }
+            if(i==batch_id[batch])
+            {
+                fprintf(stderr,"now %d\n", data_count);
+                data_count=0;
             }
         }
-        else
-        if(save_sw==0)
+        if(data_count>=data_size)
         {
-            save_sw+=1;
-            kputs("sw_test_",&str);
-            kputl(start,&str);
-            kputs("_t",&str);
-            kputl(tid,&str);
-            kputs("_s",&str);
-            kputl(data_size,&str);
-            kputs(".bin",&str);
-            store(g_srt,data_size,str.s);
-            free(g_sw.a);
+            
+            if(save_sw==0)
+            {
+                save_sw+=1;
+                kputs("sw_test_",&str);
+                kputl(start,&str);
+                kputs("_t",&str);
+                kputl(tid,&str);
+                kputs("_s",&str);
+                kputl(data_size,&str);
+                kputs(".bin",&str);
+                store(g_sw.a,g_sw.n,str.s);
+                fprintf(stderr, "now store %d\n",data_size);
+                free(g_sw.a);
+                exit(0);
+            }
         }
+        
 
     }
 #endif
@@ -2110,7 +2128,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	double ctime, rtime;
 	int i;
 
-    int batch = 1000;
+    int batch = 100000;
     int batch_size = batch*((opt->flag&MEM_F_PE)?2:1) ;
     
 	ctime = cputime(); rtime = realtime();
