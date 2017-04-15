@@ -1941,7 +1941,7 @@ typedef struct{
     swrst_t* a;
 }swrst_v;
 static swrst_v g_sw;
-static int data_size=5000;
+static int data_size=8000;
 static int qlenthreashold = 0;
 static int data_count = 0;
 #endif
@@ -2009,6 +2009,8 @@ void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_
             kputs(".bin",&str);
             store(g_srt,data_size,str.s);
             free(g_sw.a);
+		fprintf(stderr,"finish %d\n",data_size);
+		exit(0);
         }
 
     }
