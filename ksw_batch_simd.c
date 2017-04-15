@@ -556,18 +556,21 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             //end possition should be updated
             /***********keep***********/
             uint8_t t_targets[8];
-            memcpy(t_targets,target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*8,8*sizeof(uint8_t));
-            int16_t* qp_buff_nxt = qp_buff;
-            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
-            {
-                
-                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
-                
-                memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
-                qp_buff_nxt+=que_align;
-                
-            }
-            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+            
+            memcpy(t_targets, target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*PROCESSBATCH, PROCESSBATCH*sizeof(uint8_t));
+           // const uint8_t *t_targets =target_batch+(grid_process_batch_idx*PROCESSBATCH)*ref_hash->alined;
+    //        int16_t* qp_buff_nxt = qp_buff;
+//            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
+//            {
+//                
+////                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
+//                int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
+//
+//                memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
+//                qp_buff_nxt+=que_align;
+//                
+//            }
+         //   transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
              __m128i v_i = _mm_set1_epi16(i);
             /***********************/
             uint16_t j;
@@ -581,7 +584,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 v_m_l = v_zero;
                 v_mj_l = v_zero;
                 
-                const  int16_t *q_rev = qp_buff_rev;
+             //   const  int16_t *q_rev = qp_buff_rev;
                 // compute the first column
                 if ( min_beg == 0) {
                     __m128i tval = _mm_set1_epi16((o_del + e_del * (i + 1)));
@@ -608,6 +611,20 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                         //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
                         //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
                     
+                    int16_t q_rev_b[PROCESSBATCH];
+                    //memcpy(q_rev_b, q_rev+j*PROCESSBATCH, PROCESSBATCH*sizeof(int16_t));
+                    for(int process_batch_id = 0; process_batch_id<PROCESSBATCH; process_batch_id++)
+                    {
+//                        q_rev_b[l]=qp_buff_rev[j*PROCESSBATCH+l];
+//                        int qp_ptr2 = process_batch_id*m*que_align+t_targets[i+process_batch_id*ref_hash->alined] * que_align;
+                        int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
+                        const int16_t * qptmp = qp_batch_nxt+qp_ptr2;
+                        q_rev_b[process_batch_id]=qptmp[j];
+
+//                        q_rev_b[process_batch_id]=qp_buff[j + process_batch_id*que_align];
+
+                    }
+                    
                     v_M = v_hs[j];
                     v_e = v_es[j];
 
@@ -615,7 +632,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                     
                     cond =_mm_cmpeq_epi16(v_M,v_zero);
                     cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                    __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev)+j);
+                    __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev_b));
                     falsecase = _mm_adds_epi16(v_M, tmp_qp);
                     cmp_gen_result(cond, v_zero, falsecase, tmp_out_true, tmp_out_false, v_M);
                    
