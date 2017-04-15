@@ -1933,9 +1933,17 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     free(batch_id);
     free(g_srt);
 }
-//#define DEBUG_SW
+#define DEBUG_SW
 #ifdef DEBUG_SW
 static int save_sw = 0;
+typedef struct{
+    int n, m;
+    swrst_t* a;
+}swrst_v;
+static swrst_v g_sw;
+static int data_size=5000;
+static int qlenthreashold = 0;
+static int data_count = 0;
 #endif
 void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_idx, int batch, swrst_t*(*getItem)(qext_t*,size_t), int start,  int tid)
 {
@@ -1974,17 +1982,35 @@ void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_
     
     if(tid == 0&&save_sw == 0)
     {
-        int size = 1000;
-        assert(size<=batch_id[batch]);
-        save_sw++;
-        kputs("sw_start_",&str);
-        kputl(start,&str);
-        kputc('_',&str);
-        kputl(tid,&str);
-        kputc('_',&str);
-        kputl(size,&str);
-        kputs(".bin",&str);
-        store(g_srt,size,str.s);
+        if(g_sw.a==NULL&&data_count<data_size)
+            kv_init(g_sw);
+        
+        if(data_count<data_size)
+        {
+            for(int i=0; i<batch_id[batch]; i++)
+            {
+                if(g_srt[i].sw_seq->qlen>qlenthreashold)
+                {
+                    kv_push(swrst_t, g_sw, g_srt[i]);
+                    data_count++;
+                }
+            }
+        }
+        else
+        if(save_sw==0)
+        {
+            save_sw+=1;
+            kputs("sw_test_",&str);
+            kputl(start,&str);
+            kputs("_t",&str);
+            kputl(tid,&str);
+            kputs("_s",&str);
+            kputl(data_size,&str);
+            kputs(".bin",&str);
+            store(g_srt,data_size,str.s);
+            free(g_sw.a);
+        }
+
     }
 #endif
     ksw_extend_batch2(g_srt, (uint32_t)batch_id[batch], 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
