@@ -1537,7 +1537,7 @@ double realtime()
     return tp.tv_sec + tp.tv_usec * 1e-6;
 }
 
-int main()
+int main(int argc, char** argv)
 {
      const int g_m = 5;
      int8_t g_mat[5][5];
@@ -1549,7 +1549,7 @@ int main()
     
     load_config(&g_mat[0][0], &g_o_del, &g_e_del, &g_o_ins, &g_e_ins, &g_zdrop);
     swrst_t* nsrt;
-    size_t nread = load(&nsrt,"sw_start_8000_0_2000.bin");
+    size_t nread = load(&nsrt,argv[1]);
     
     //time
     double ctime = cputime();
@@ -1559,7 +1559,13 @@ int main()
     ksw_extend_batch2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
     
     //time
+	double timespend=realtime()-rtime;
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+   FILE* sv_time;
+        sv_time = fopen( argv[2],"a+");
+        assert(sv_time!=NULL);
+        fprintf(sv_time, "%f\n",timespend);
+
 
 //    swrst_t* rsrt;
 //    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
