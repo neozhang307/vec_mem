@@ -27,6 +27,8 @@ typedef struct
 void ksw_extend_batch(swrst_t* swrts, size_t size,int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size,int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
 
+void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop);
+
 void store(swrst_t* data, size_t size, const char* file);
 
 size_t load(swrst_t** data, const char* file);

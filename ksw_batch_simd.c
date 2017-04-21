@@ -1514,6 +1514,32 @@ void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int
         }
     }
 }
+
+#define MAX_BAND_TRY 2
+
+void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
+{
+    assert(m==5);
+    for(int i=0; i<size;++i)
+    {
+
+        swrst_t *sw = swrts+i;
+        swseq_t *seq = sw->sw_seq;
+        int aw=ini_w;
+        if(seq->qlen!=0)
+        {
+            for (int i = 0; i < MAX_BAND_TRY; ++i) {
+                int prev = sw->score;
+                aw = ini_w << i;
+                sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, aw, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+
+                if (sw->score == prev || sw->max_off < (aw>>1) + (aw>>2)) break;
+            }
+        }
+        sw->w=aw;
+    }
+}
+
 //#define SWBATCHDB
 #ifdef SWBATCHDB
 #include <sys/types.h>
