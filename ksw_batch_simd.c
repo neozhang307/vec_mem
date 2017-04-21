@@ -1539,6 +1539,7 @@ double realtime()
 
 int main(int argc, char** argv)
 {
+	fprintf(stderr,"%s\n",argv[0]);
      const int g_m = 5;
      int8_t g_mat[5][5];
      int g_o_del;
@@ -1560,7 +1561,7 @@ int main(int argc, char** argv)
     
     //time
 	double timespend=realtime()-rtime;
-    fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    fprintf(stderr, "[M::%s] Processed %ld reads in %.6f CPU sec, %.6f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
    FILE* sv_time;
         sv_time = fopen( argv[2],"a+");
         assert(sv_time!=NULL);
