@@ -1517,16 +1517,36 @@ void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int
 
 #define MAX_BAND_TRY 2
 
+typedef struct
+{
+    int m,n;
+    int * a;
+}i_vec;
+
 void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
+    
+    i_vec swrstid_cur;
+    swrstid_cur.a=malloc(sizeof(int)*size);
+    swrstid_cur.m=size;
+    swrstid_cur.n=0;
     for(int i=0; i<size;++i)
     {
-
         swrst_t *sw = swrts+i;
         swseq_t *seq = sw->sw_seq;
-        int aw=ini_w;
         if(seq->qlen!=0)
+        {
+            swrstid_cur.a[swrstid_cur.n++]=i;
+        }
+    }
+    for(int i=0; i<swrstid_cur.n;++i)
+    //for(int i=0; i<size;++i)
+    {
+        swrst_t *sw = swrts+swrstid_cur.a[i];
+        swseq_t *seq = sw->sw_seq;
+        int aw=ini_w;
+//        if(seq->qlen!=0)
         {
             for (int i = 0; i < MAX_BAND_TRY; ++i) {
                 int prev = sw->score;
