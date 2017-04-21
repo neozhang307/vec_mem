@@ -129,38 +129,38 @@ void finalize_load(swrst_t*data,size_t size)
     free(data);
 }
 
-//void load_config()
-//{
-//    FILE* confile = fopen("sw.config","rb");
-//    if(confile==NULL)
-//        return;
-//    fread(g_mat, sizeof(int8_t), 25, confile);
-//    fread(&g_o_del, sizeof(int), 1, confile);
-//    fread(&g_e_del, sizeof(int), 1, confile);
-//    fread(&g_o_ins, sizeof(int), 1, confile);
-//    fread(&g_e_ins, sizeof(int), 1, confile);
-//    fread(&g_zdrop, sizeof(int), 1, confile);
-//    fclose(confile);
-//}
+void load_config( int8_t *mat, int *o_del, int *e_del, int *o_ins, int *e_ins, int *zdrop)
+{
+    FILE* confile = fopen("sw.config","rb");
+    if(confile==NULL)
+        return;
+    fread(mat, sizeof(int8_t), 25, confile);
+    fread(o_del, sizeof(int), 1, confile);
+    fread(e_del, sizeof(int), 1, confile);
+    fread(o_ins, sizeof(int), 1, confile);
+    fread(e_ins, sizeof(int), 1, confile);
+    fread(zdrop, sizeof(int), 1, confile);
+    fclose(confile);
+}
 
-//void store_config()
-//{
-//    FILE* confile = fopen("sw.config","wb+");
-//    if(confile==NULL)
-//        return;
-//    fwrite(g_mat, sizeof(int8_t), 25, confile);
-//    fwrite(&g_o_del, sizeof(int), 1, confile);
-//    fwrite(&g_e_del, sizeof(int), 1, confile);
-//    fwrite(&g_o_ins, sizeof(int), 1, confile);
-//    fwrite(&g_e_ins, sizeof(int), 1, confile);
-//    fwrite(&g_zdrop, sizeof(int), 1, confile);
-//    fclose(confile);
-//}
+void store_config(const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+{
+    FILE* confile = fopen("sw.config","wb+");
+    if(confile==NULL)
+        return;
+    fwrite(mat, sizeof(int8_t), 25, confile);
+    fwrite(&o_del, sizeof(int), 1, confile);
+    fwrite(&e_del, sizeof(int), 1, confile);
+    fwrite(&o_ins, sizeof(int), 1, confile);
+    fwrite(&e_ins, sizeof(int), 1, confile);
+    fwrite(&zdrop, sizeof(int), 1, confile);
+    fclose(confile);
+}
 
 //void init(int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 //{
-////    assert(m==5);
-//////    memcpy(g_mat,mat,sizeof(int8_t)*25);
+//    assert(m==5);
+//    memcpy(g_mat,mat,sizeof(int8_t)*25);
 ////    g_o_del = o_del;
 ////    g_e_del = e_del;
 ////    g_o_ins = o_ins;
@@ -388,7 +388,9 @@ void batch_sw_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
-                   const int m,
+                   
+                   int m,
+                   
                    int o_del,
                    int e_del,
                    int o_ins,
@@ -795,7 +797,9 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
+                   
                     int m,
+                    
                    int o_del,
                    int e_del,
                    int o_ins,
@@ -1045,7 +1049,7 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 }
 /**************/
 #include<time.h>
-void ksw_extend_batch2(swrst_t* swrts, uint32_t size, const int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
 #ifdef SWBATCHDB
     clock_t m_start,m_end;
@@ -1331,7 +1335,9 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, const int m, const int8_t 
                             rdb_rev,
                             qp_db,
                             g_h0,//input
+                      
                             m,
+                      
                             o_del,
                             e_del,
                             o_ins,
@@ -1377,18 +1383,138 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, const int m, const int8_t 
 
 
 
-void ksw_extend_batch(swrst_t* swrts, size_t size, const int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
-    for(int cur_ptr=0; cur_ptr<size; cur_ptr++)
+    //sort
+    assert(m==5);
+    for(int i=0; i<size;++i)
     {
-        swrst_t* cur_srt_r = &swrts[cur_ptr];
-        swseq_t* cur_seq_r = cur_srt_r->sw_seq;
-        if(cur_seq_r->qlen!=0)// right extension main
+//            swrst_t *sw = swrts+i;
+//            swseq_t *seq = sw->sw_seq;
+//            if(seq->qlen!=0)
+//            {
+//                sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, 5, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins, g_zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+//            }
+        swrst_t *sw = swrts+i;
+        swseq_t *seq = sw->sw_seq;
+        if(seq->qlen!=0)
         {
-            cur_srt_r->score = ksw_extend2_mod(cur_seq_r->qlen, cur_seq_r->query, cur_seq_r->rlen, cur_seq_r->ref, 5, mat, o_del, e_del, o_ins, e_ins, zdrop, cur_srt_r->h0, &cur_srt_r->qle, &cur_srt_r->tle, &cur_srt_r->gtle, &cur_srt_r->gscore, &cur_srt_r->max_off);//max_off
+            
+            int qlen = seq->qlen;
+            int tlen = seq->rlen;
+            const uint8_t *query = seq->query;
+            const uint8_t *target = seq->ref;
+         
+            int h0 = sw->h0;
+
+            //process 16 query at a time for uint8; process 8 query at a time for uint16 query
+            {
+                eh_m *eh; // score array
+                int8_t *qp; // query profile
+                int i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end, max, max_i, max_j, max_ie, gscore, max_off;
+                assert(h0 > 0);
+                // allocate memory
+                qp = malloc(qlen * m);
+                eh = calloc(qlen + 1, 8);
+                // generate the query profile
+                for (k = i = 0; k < m; ++k) {
+                    const int8_t *p = &mat[k * m];
+                    for (j = 0; j < qlen; ++j) qp[i++] = p[query[j]];
+                }
+                
+                
+                // fill the first row
+                eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
+                for (j = 2; j <= qlen && eh[j-1].h > e_ins; ++j)
+                    eh[j].h = eh[j-1].h - e_ins;
+                // adjust $w if it is too large
+                k = m * m;
+                for (i = 0, max = 0; i < k; ++i) // get the max score
+                    max = max > mat[i]? max : mat[i];
+                // DP loop
+                max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
+                max_off = 0;
+                beg = 0, end = qlen;
+                
+                //MAIN SW
+                for (i = 0; LIKELY(i < tlen); ++i) {
+                    int t, f = 0, h1, m = 0, mj = -1;
+                    int8_t *q = &qp[target[i] * qlen];
+                    // apply the band and the constraint (if provided)
+                    //        if (beg < i - w) beg = i - w;
+                    //        if (end > i + w + 1) end = i + w + 1;
+                    //        if (end > qlen) end = qlen;
+                    // compute the first column
+                    if (beg == 0) {
+                        h1 = h0 - (o_del + e_del * (i + 1));
+                        if (h1 < 0) h1 = 0;
+                    } else h1 = 0;
+                    //processing a row
+                    for (j = beg; LIKELY(j < end); ++j) {
+                        // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
+                        // Similar to SSE2-SW, cells are computed in the following order:
+                        //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
+                        //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
+                        //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
+                        eh_m *p = &eh[j];
+                        int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
+                        p->h = h1;          // set H(i,j-1) for the next row
+                        M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
+                        h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
+                        h = h > f? h : f;
+                        h1 = h;             // save H(i,j) to h1 for the next column
+                        mj = m > h? mj : j; // record the position where max score is achieved
+                        m = m > h? m : h;   // m is stored at eh[mj+1]
+                        t = M - oe_del;
+                        t = t > 0? t : 0;
+                        e -= e_del;
+                        e = e > t? e : t;   // computed E(i+1,j)
+                        p->e = e;           // save E(i+1,j) for the next row
+                        t = M - oe_ins;
+                        t = t > 0? t : 0;
+                        f -= e_ins;
+                        f = f > t? f : t;   // computed F(i,j+1)
+                    }
+                    eh[end].h = h1; eh[end].e = 0;
+                    if (j == qlen) {
+                        max_ie = gscore > h1? max_ie : i;
+                        gscore = gscore > h1? gscore : h1;
+                    }
+               //     if (m == 0) break;
+                    if (m > max) {
+                        max = m, max_i = i, max_j = mj;
+                        max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
+                    } else if (zdrop > 0) {
+//                        if (i - max_i > mj - max_j) {
+//                            if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+//                        } else {
+//                            if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+//                        }
+                    }
+                    // update beg and end for the next round
+         //           for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
+          //          beg = j;
+           //         for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
+            //        end = j + 2 < qlen? j + 2 : qlen;
+                    beg = 0; end = qlen; // uncomment this line for debugging
+                }
+                
+                //finalize
+                free(eh); free(qp);
+                
+                //post process
+                //result
+                sw->qle = max_j+1;
+                sw->tle = max_i+1;
+                sw->gtle = max_ie+1;
+                sw->gscore = gscore;
+                sw->max_off = max_off;
+                sw->score = max;
+            }
         }
     }
 }
+//#define SWBATCHDB
 #ifdef SWBATCHDB
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -1413,7 +1539,15 @@ double realtime()
 
 int main()
 {
-    load_config();
+     const int g_m = 5;
+     int8_t g_mat[5][5];
+     int g_o_del;
+     int g_e_del;
+     int g_o_ins;
+     int g_e_ins;
+     int g_zdrop;
+    
+    load_config(&g_mat[0][0], &g_o_del, &g_e_del, &g_o_ins, &g_e_ins, &g_zdrop);
     swrst_t* nsrt;
     size_t nread = load(&nsrt,"sw_start_8000_0_2000.bin");
     
@@ -1427,24 +1561,24 @@ int main()
     //time
     fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
 
-    swrst_t* rsrt;
-    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
-    assert(rread==nread);
-    fprintf(stdout,"the latter result is correct\n");
-    //printf("the result is %d\n", cmp(nsrt,rsrt,nread));
-    uint8_t check = printdif(nsrt,rsrt,process_sze);
-    if(check==0)
-    {
-        fprintf(stderr,"the check result is correct\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
-    else
-    {
-        fprintf(stderr,"the check result is incorrect\n");
-        fprintf(stderr,"which is 0x%02x\n",check);
-    }
+//    swrst_t* rsrt;
+//    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
+//    assert(rread==nread);
+//    fprintf(stdout,"the latter result is correct\n");
+// //   printf("the result is %d\n", cmp(nsrt,rsrt,nread));
+//    uint8_t check = printdif(nsrt,rsrt,process_sze);
+//   if(check==0)
+//    {
+//        fprintf(stderr,"the check result is correct\n");
+//        fprintf(stderr,"which is 0x%02x\n",check);
+//    }
+//    else
+//    {
+//        fprintf(stderr,"the check result is incorrect\n");
+//        fprintf(stderr,"which is 0x%02x\n",check);
+//    }
     finalize_load(nsrt,nread);
-    finalize_load(rsrt,rread);
+//    finalize_load(rsrt,rread);
     return 0;
 }
 #endif

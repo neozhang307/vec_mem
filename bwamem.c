@@ -2209,7 +2209,7 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
         }
         while(1)
         {
-            for(int cur_process_id=0; cur_process_id<next_process; cur_process_id++)//process batch of data
+            for(int cur_process_id=0; cur_process_id<next_process; cur_process_id++)//filter process batch of data
             {
             // NEO: should do modification in this part in the future
 
@@ -2472,8 +2472,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 }
                 a->seedlen0 = s->len;
                 a->frac_rep = c->frac_rep;//c
-            }
             
+            }
             sw_nxt_process.n=0;//set zero
             free(b_sw_seq_left);
             free(b_sw_vals_left);
