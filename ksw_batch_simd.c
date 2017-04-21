@@ -1516,7 +1516,7 @@ void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int
 }
 
 #define MAX_BAND_TRY 2
-#include "kvec.h"
+#include"kvec.h"
 typedef struct
 {
     int m,n;
@@ -1527,49 +1527,42 @@ void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
 {
     assert(m==5);
     
-    i_vec swrstid_cur, swrstid_nxt, swrstid_tmp;
+    i_vec swrstid_cur,swrstid_pre, swrstid_tmp;
     swrstid_cur.a=malloc(sizeof(int)*size);
     swrstid_cur.m=size;
     swrstid_cur.n=0;
-    swrstid_nxt.a=malloc(sizeof(int)*size);
-    swrstid_nxt.m=size;
-    swrstid_nxt.n=0;
+    swrstid_pre.a=malloc(sizeof(int)*size);
+    swrstid_pre.m=size;
+    swrstid_pre.n=0;
     for(int i=0; i<size;++i)
     {
         swrst_t *sw = swrts+i;
         swseq_t *seq = sw->sw_seq;
-        sw->w = ini_w;
         if(seq->qlen!=0)
         {
-            kv_push(int,swrstid_cur,i);
-            //swrstid_cur.a[swrstid_cur.n++]=i;
+            sw->w=ini_w;
+            kv_push(int, swrstid_cur, i);
+//            swrstid_cur.a[swrstid_cur.n++]=i;
         }
     }
-    for (int i = 0; i < MAX_BAND_TRY; ++i)
+    
+    for(int i=0; i<swrstid_cur.n;++i)
     {
-        for(int i=0; i<swrstid_cur.n;++i)
+        swrst_t *sw = swrts+swrstid_cur.a[i];
+        swseq_t *seq = sw->sw_seq;
         {
-            swrst_t *sw = swrts+swrstid_cur.a[i];
-            swseq_t *seq = sw->sw_seq;
+            for (int i = 0; i < MAX_BAND_TRY; ++i) {
+                int prev = sw->score;
+                
+                sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
 
-        
-            int prev = sw->score;
-            sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-            if (!(sw->score == prev || sw->max_off < (sw->w>>1) + (sw->w>>2)))
-            {
-                sw->w = ini_w << i;
-                kv_push(int,swrstid_nxt,swrstid_cur.a[i]);//nxt to process
+                if (sw->score == prev || sw->max_off < (sw->w>>1) + (sw->w>>2)) break;
+                sw->w = ini_w << (i+1);
             }
         }
-        swrstid_tmp=swrstid_nxt;
-        swrstid_nxt = swrstid_cur;
-        swrstid_cur = swrstid_tmp;
-        swrstid_nxt.n=0;
-        if(swrstid_cur.n==0)
-            break;
     }
     kv_destroy(swrstid_cur);
-    kv_destroy(swrstid_nxt);
+    kv_destroy(swrstid_pre);
 }
 
 //#define SWBATCHDB
