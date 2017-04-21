@@ -1558,7 +1558,7 @@ void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             if (!(sw->score == prev || sw->max_off < (sw->w>>1) + (sw->w>>2)))
             {
                 sw->w = ini_w << i;
-                kv_push(int,swrstid_nxt,i);//nxt to process
+                kv_push(int,swrstid_nxt,swrstid_cur.a[i]);//nxt to process
             }
         }
         swrstid_tmp=swrstid_nxt;
