@@ -1555,6 +1555,8 @@ double realtime()
 
 int main(int argc, char** argv)
 {
+	 fprintf(stderr,"%s\n",argv[0]);
+
      const int g_m = 5;
      int8_t g_mat[5][5];
      int g_o_del;
