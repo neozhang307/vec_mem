@@ -2242,13 +2242,13 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                                     qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
                                     max_overlap = min(qd,rd);
                                     max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
-                                    w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
+                                    w = max_gap < p->w? max_gap : p->w; //< p->w? max_gap : p->w; // bounded by the band width
                                     if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
                                     // similar to the previous four lines, but this time we look at the region behind
                                     qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
                                     max_overlap = min(qd,rd);
                                     max_gap = cal_max_gap(opt, max_overlap);
-                                    w = max_gap-max_overlap;// < p->w? max_gap : p->w;
+                                    w = max_gap < p->w? max_gap : p->w; // < p->w? max_gap : p->w;
                                     if (qd - rd < w && rd - qd < w) break;
                                 }
                                 

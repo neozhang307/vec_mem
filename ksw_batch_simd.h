@@ -15,7 +15,8 @@ typedef struct
     int qle,tle;//64
     int gtle, gscore;//64
     
-    int h0;//64
+    int h0;
+    int w;//64
     swseq_t* sw_seq;//64
 }swrst_t;
 /*
