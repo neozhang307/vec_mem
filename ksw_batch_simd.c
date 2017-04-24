@@ -1077,39 +1077,41 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     assert(m==5);
     assert(size>=0);
     uint64_t* swlen = malloc(sizeof(int64_t)*size);//should record qlen rlen
-    for(uint32_t i=0; i<size; ++i)
+    int j = 0;
+	for(uint32_t i=0; i<size; ++i)
     {
         uint64_t tval=(uint64_t)i<<32;
         swseq_t* tseq = swrts[i].sw_seq;
         uint32_t qlen = tseq->qlen;
+	if(qlen==0)continue;
  //       uint32_t rlen = tseq->rlen;
 //        uint32_t mx = qlen>rlen?qlen:rlen;
         uint32_t mx=qlen;
         tval|=mx;
-        swlen[i]=tval;
+        swlen[j++]=tval;
     }
-    ks_introsort(uint64_t,size,swlen);
-#ifdef DEBUG_SW
-    assert((uint32_t)swlen[0]==0);
-#endif
+ //   ks_introsort(uint64_t,size,swlen);
+//#ifdef DEBUG_SW
+//    assert((uint32_t)swlen[0]==0);
+//#endif
     int ptr = 0;
+    size = j;  
+   // int threashold = 0;
+   // while((uint32_t)swlen[ptr]==0&&ptr<size) ptr++;
     
-    int threashold = 0;
-    while((uint32_t)swlen[ptr]==0&&ptr<size) ptr++;
-    
-    int none_zero = ptr;
-    while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
-#ifdef SWBATCHDB
-    fprintf(stderr,"jump from %d to %d, while total size is%d\n",none_zero,ptr,size);
-#endif
+    //int none_zero = ptr;
+    //while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
+//#ifdef SWBATCHDB
+ //   fprintf(stderr,"jump from %d to %d, while total size is%d\n",none_zero,ptr,size);
+//#endif
     //    //sinple use sinple way
-    for(int i=none_zero; i<ptr; i++)
-    {
-        int idx = swlen[i]>>32;
-        swrst_t *sw = swrts+idx;
-        swseq_t *seq = sw->sw_seq;
-        sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, m, mat, o_del, e_del, o_ins, e_ins, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-    }
+  //  for(int i=none_zero; i<ptr; i++)
+   // {
+     //   int idx = swlen[i]>>32;
+      //  swrst_t *sw = swrts+idx;
+       // swseq_t *seq = sw->sw_seq;
+    //    sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, m, mat, o_del, e_del, o_ins, e_ins, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+    //}
 //
     
     //recompute space size
