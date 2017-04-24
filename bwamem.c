@@ -1933,7 +1933,7 @@ void mem_chain_extent_batch3(const mem_opt_t *opt, qext_t* ext_base, size_t* chn
     free(batch_id);
     free(g_srt);
 }
-#define DEBUG_SW
+//#define DEBUG_SW
 #ifdef DEBUG_SW
 static int save_sw = 0;
 typedef struct{
