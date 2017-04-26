@@ -1499,18 +1499,18 @@ void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int
                         max = m, max_i = i, max_j = mj;
                         max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
                     } else if (zdrop > 0) {
-//                        if (i - max_i > mj - max_j) {
-//                            if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-//                        } else {
-//                            if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-//                        }
+                        if (i - max_i > mj - max_j) {
+                            if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                        } else {
+                            if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                        }
                     }
                     // update beg and end for the next round
-         //           for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
-          //          beg = j;
-           //         for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
-            //        end = j + 2 < qlen? j + 2 : qlen;
-                    beg = 0; end = qlen; // uncomment this line for debugging
+                   for (j = beg; (j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
+                    beg = j;
+                    for (j = end; (j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
+                    end = j + 2 < qlen? j + 2 : qlen;
+                   // beg = 0; end = qlen; // uncomment this line for debugging
                 }
                 
                 //finalize
@@ -1571,7 +1571,7 @@ int main(int argc, char** argv)
     double rtime = realtime();
     size_t process_sze = nread;
     fprintf(stderr,"now try %ld\n",process_sze);
-    ksw_extend_batch2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
+    ksw_extend_batch(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
     
     //time
 	double timespend=realtime()-rtime;

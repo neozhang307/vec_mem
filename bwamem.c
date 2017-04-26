@@ -1978,6 +1978,7 @@ void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_
     //init(5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
 
 #ifdef DEBUG_SW
+    store_config(opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
     kstring_t str={0,0,0};
     
     if(tid == 0&&save_sw == 0)
