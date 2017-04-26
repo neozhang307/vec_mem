@@ -1057,6 +1057,10 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     m_start = clock();
 #endif
     //sort
+#ifdef SWBATCHDB
+    clock_t start,end;
+    start = clock();
+#endif
     assert(m==5);
     assert(size>=0);
     uint64_t* swlen = malloc(sizeof(int64_t)*size);//should record qlen rlen
@@ -1072,8 +1076,14 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         swlen[i]=tval;
     }
     ks_introsort(uint64_t,size,swlen);
+#ifdef SWBATCHDB
+    end = clock();
+    fprintf(stderr,"sorting time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+    start = clock();
+#endif
 #ifdef DEBUG_SW
-    assert((uint32_t)swlen[0]==0);
+    
+	assert((uint32_t)swlen[0]==0);
 #endif
     int ptr = 0;
     
@@ -1098,6 +1108,8 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     //recompute space size
     //uint8_t batch = BATCHSIZE;//16 | 8
     
+#ifdef SWBATCHDB
+#endif
     uint32_t resize = size-ptr;
     uint32_t resize_segs = (resize+BATCHSIZE-1)/BATCHSIZE;//skip zero ones
     uint32_t aligned_resize = resize_segs*BATCHSIZE;
@@ -1171,7 +1183,11 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     }
     
     
-
+#ifdef SWBATCHDB
+    end = clock();
+    fprintf(stderr,"initialize db time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+    start = clock();
+#endif
     uint8_t* rdb = malloc(ref_global_id_x*BATCHSIZE);
     uint8_t* rdb_rev = malloc(ref_global_id_x*BATCHSIZE);
     memset(rdb,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
@@ -1184,8 +1200,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     //swlen_resize size is resize
     //construct RDB;
 #ifdef SWBATCHDB
-    clock_t start,end;
-    start = clock();
 #endif
     for(int i=0; i<resize; i++)
     {
@@ -1200,6 +1214,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
 #ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"ref copy time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+    start = clock();
 #endif
 #ifdef DEBUG_SW
     for(int i=0; i<resize; i++)
@@ -1216,7 +1231,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     }
 #endif
 #ifdef SWBATCHDB
-    start = clock();
 #endif
     for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
     {
@@ -1281,6 +1295,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
 #ifdef SWBATCHDB
     end = clock();
     fprintf(stderr,"qp execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+    start = clock();
 #endif
 //    
     
@@ -1298,7 +1313,6 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     uint32_t next_process = BATCHSIZE;
     //main
 #ifdef SWBATCHDB
-    start = clock();
 #endif
     for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
     {
