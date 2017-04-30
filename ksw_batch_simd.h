@@ -9,7 +9,8 @@ typedef struct
 }swseq_t;
 typedef struct
 {
-    int score;
+    int16_t score;
+    int16_t pre_score;
     int max_off;//64
     
     int qle,tle;//64

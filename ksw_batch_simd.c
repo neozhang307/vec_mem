@@ -794,24 +794,24 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 
 
 void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
-                   uint8_t* rdb_rev,
-                   int16_t* qp_db,
-                   int16_t g_h0[BATCHSIZE],//input
+                    uint8_t* rdb_rev,
+                    int16_t* qp_db,
+                    int16_t g_h0[BATCHSIZE],//input
                    
                     int m,
                     
-                   int o_del,
-                   int e_del,
-                   int o_ins,
-                   int e_ins,
-                   int zdrop,
+                    int o_del,
+                    int e_del,
+                    int o_ins,
+                    int e_ins,
+                    int zdrop,
                    
-                   int16_t g_qle[BATCHSIZE],//result
-                   int16_t g_tle[BATCHSIZE],
-                   int16_t g_gtle[BATCHSIZE],
-                   int16_t g_gscore[BATCHSIZE],
-                   int16_t g_max_off[BATCHSIZE],
-                   int16_t g_score[BATCHSIZE]
+                    int16_t g_qle[BATCHSIZE],//result
+                    int16_t g_tle[BATCHSIZE],
+                    int16_t g_gtle[BATCHSIZE],
+                    int16_t g_gscore[BATCHSIZE],
+                    int16_t g_max_off[BATCHSIZE],
+                    int16_t g_score[BATCHSIZE]
                    
                    )
 {
@@ -1552,11 +1552,15 @@ void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
             swseq_t *seq = sw->sw_seq;
             
-            int prev = sw->score;
+            sw->pre_score = sw->score;
             
             sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-            
-            if (!(sw->score == prev || sw->max_off < (sw->w>>1) + (sw->w>>2)))
+        }
+        for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
+        {
+            swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
+            swseq_t *seq = sw->sw_seq;
+            if (!(sw->score ==  sw->pre_score || sw->max_off < (sw->w>>1) + (sw->w>>2)))
             {
                 sw->w = ini_w << (sw_iter+1);
                 kv_push(int,swrstid_nxt,swrstid_cur.a[sw_iter]);
