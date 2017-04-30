@@ -793,6 +793,418 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 }
 
 
+void batch_sw_w_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
+                   uint8_t* rdb_rev,
+                   int16_t* qp_db,
+                   int16_t g_h0[BATCHSIZE],//input
+                   
+                   int m,
+                   
+                   int o_del,
+                   int e_del,
+                   int o_ins,
+                   int e_ins,
+                   int w,
+                   int end_bonus,
+                   int zdrop,
+                   
+                   int16_t g_qle[BATCHSIZE],//result
+                   int16_t g_tle[BATCHSIZE],
+                   int16_t g_gtle[BATCHSIZE],
+                   int16_t g_gscore[BATCHSIZE],
+                   int16_t g_max_off[BATCHSIZE],
+                   int16_t g_score[BATCHSIZE]
+                   
+                   )
+{
+    
+    
+#define __max_8(ret, xx) do { \
+(xx) = _mm_max_epi16((xx), _mm_srli_si128((xx), 8)); \
+(xx) = _mm_max_epi16((xx), _mm_srli_si128((xx), 4)); \
+(xx) = _mm_max_epi16((xx), _mm_srli_si128((xx), 2)); \
+(ret) = _mm_extract_epi16((xx), 0); \
+} while (0)
+#define __min_8(ret, xx) do { \
+(xx) = _mm_min_epi16((xx), _mm_srli_si128((xx), 8)); \
+(xx) = _mm_min_epi16((xx), _mm_srli_si128((xx), 4)); \
+(xx) = _mm_min_epi16((xx), _mm_srli_si128((xx), 2)); \
+(ret) = _mm_extract_epi16((xx), 0); \
+} while (0)
+    
+    //  int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
+    __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins,v_zdrop,v_w;
+    v_zdrop = _mm_set1_epi16(zdrop);
+    v_zero = _mm_set1_epi32(0);
+    v_oe_del = _mm_set1_epi16(o_del + e_del);
+    v_e_del = _mm_set1_epi16(e_del);
+    v_oe_ins = _mm_set1_epi16(o_ins + e_ins);
+    v_e_ins = _mm_set1_epi16(e_ins);
+    
+    v_w = _mm_set1_epi16(w);
+#define cmp_int16flag_change(ori_flag,v_zero,out_flag,tmp_h,tmp_l) do{\
+(out_flag) = ori_flag;\
+}while(0)
+#define cmp_int16flag_change2(ori_flag,v_zero,out_flag,tmp_h,tmp_l) do{\
+(tmp_h) = _mm_unpackhi_epi16(ori_flag, v_zero); \
+(tmp_l) = _mm_unpacklo_epi16(v_zero, ori_flag);\
+(tmp_h) = (__m128i)_mm_cmpneq_ps((__m128)tmp_h, (__m128)v_zero);\
+(tmp_l) = (__m128i)_mm_cmpneq_ps((__m128)tmp_l, (__m128)v_zero);\
+(out_flag) = _mm_packs_epi16(tmp_l, tmp_h);\
+}while(0)
+    //input would be modified
+#define cmp_gen_result(cond,truecase,falsecase,tmp_out_true,tmp_out_false,out) do{\
+(tmp_out_true)=(__m128i)_mm_and_ps((__m128)cond,(__m128)truecase);\
+(tmp_out_false)=(__m128i)_mm_andnot_ps((__m128)cond,(__m128)falsecase);\
+out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
+}while(0)
+    int que_align = que_hash->alined;
+    
+    size_t ref_batch_global_id = ref_hash->global_batch_id;
+    size_t que_batch_global_id = que_hash->global_batch_id;
+    
+    int16_t* qp_buff = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
+    memset(qp_buff,0,sizeof(int16_t)*PROCESSBATCH*que_align);
+    int16_t* qp_buff_rev = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
+    memset(qp_buff_rev,0,sizeof(int16_t)*PROCESSBATCH*que_align);
+    
+    uint16_t qlens[8];
+    uint16_t maxqlen=0;
+    uint16_t tlens[8];
+    uint16_t maxtlen=0;
+    __m128i v_qlen, v_tlen;//no smaller
+    
+    
+    // int16_t begs[8], ends[8];
+    
+    
+    //inreducable
+    __m128i v_end;
+    __m128i v_max, v_max_i, v_max_j, v_max_ie, v_gscore,v_max_off;
+    //reducable
+    __m128i v_h0 = _mm_set1_epi32(0);
+    
+    for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
+    {
+        const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
+        
+        const int16_t *qp_batch = qp_db +m*que_batch_global_id;
+        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
+        
+        //process 8 query at a time for int16_t
+        v_h0=_mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
+        //        if(_mm_movemask_epi8(_mm_cmplt_ps((__m128)v_h0, (__m128)v_zero))!=0)//v_h0>0
+        //        {
+        //
+        //        }
+        assert(_mm_movemask_epi8(_mm_cmplt_epi16(v_h0, v_zero))==0);//all v_h0 > 0
+        __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
+        __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
+        
+        v_hs[0]=v_h0;
+        v_hs[1]=_mm_subs_epu16(v_h0, v_oe_ins);
+        for(int j=2; j<=que_align; j++)
+        {
+            __m128i v_tmp = v_hs[j-1];
+            
+            v_tmp = _mm_subs_epu16(v_tmp, v_e_ins);
+            
+            if(!_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_tmp, (__m128)v_zero)))
+            {
+                break;//when all equal to zero, break;
+            }
+            v_hs[j]=v_tmp;
+        }
+        /*********keeep************/
+        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
+        {
+            // hash_t *tmphash =db_hash_nxt_id+process_batch_id+grid_process_batch_idx*8;
+            packed_hash_t * tmp_quehash = que_hash+process_batch_id+grid_process_batch_idx*8;
+            packed_hash_t * tmp_refhash = ref_hash+process_batch_id+grid_process_batch_idx*8;
+            qlens[process_batch_id]=tmp_quehash->len;
+            tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
+        }
+        maxqlen=que_hash->batch_max_len;
+        maxtlen=ref_hash->batch_max_len;
+        v_qlen=_mm_load_si128((__m128i*)qlens);
+        
+        v_tlen=_mm_load_si128((__m128i*)tlens);
+        
+        v_max = v_h0;
+        v_max_i =_mm_set1_epi16(-1);
+        v_max_j =_mm_set1_epi16(-1);
+        v_max_ie =_mm_set1_epi16(-1);
+        v_gscore =_mm_set1_epi16(-1);
+        v_max_off = _mm_set1_epi32(0);
+        /************************/
+        /***********new*************/
+        //reducable
+        __m128i v_t, v_f, v_h1, v_m, v_mj;
+        v_h1 = v_zero;
+        //seems inreducable
+        __m128i v_h_l, v_m_l, v_mj_l;
+        int16_t min_beg, max_beg, min_end, max_end;
+        /************************/
+        
+        v_end = v_qlen;
+        
+        __m128i tmplen = v_qlen;
+        min_beg = 0;
+        max_beg = 0;
+        tmplen = v_end;
+        __max_8(max_end, tmplen);
+        tmplen = v_end;
+        __max_8(min_end, tmplen);
+        /************************/
+        //MAIN SW
+        for (int16_t i = 0; LIKELY(i < maxtlen) ; ++i) {
+            __m128i v_tmp1;
+            __m128i cond,cond2;
+            __m128i truecase,falsecase;
+            __m128i tmp_out_true,tmp_out_false;
+            
+            __m128i tmplen = v_end;
+            __max_8(max_end, tmplen);
+            //end possition should be updated
+            /***********keep***********/
+            uint8_t t_targets[8];
+            memcpy(t_targets,target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*8,8*sizeof(uint8_t));
+            int16_t* qp_buff_nxt = qp_buff;
+            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
+            {
+                
+                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
+                
+                memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
+                qp_buff_nxt+=que_align;
+                
+            }
+            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+            __m128i v_i = _mm_set1_epi16(i);
+            /***********************/
+            uint16_t j;
+            {
+                
+                //init
+                v_f = v_zero;
+                v_m = v_zero;
+                v_mj = _mm_set1_epi16(-1);
+                v_h_l = v_zero;
+                v_m_l = v_zero;
+                v_mj_l = v_zero;
+                
+                const  int16_t *q_rev = qp_buff_rev;
+                // compute the first column
+                if ( min_beg == 0) {
+                    __m128i tval = _mm_set1_epi16((o_del + e_del * (i + 1)));
+                    v_h1 = _mm_subs_epu16(v_h0,tval);
+                } else v_h1=v_zero;
+                
+                //new reducable***********
+                __m128i v_M;
+                __m128i v_h;
+                __m128i v_e;
+                
+                //processing a row
+                
+                __m128i v_j = v_zero;
+                
+                //processing a row
+                // for (j =  0; LIKELY(j < LOOP); ++j)
+                for (j =  min_beg; LIKELY(j < max_end); ++j)
+                {
+                    v_j =_mm_set1_epi16(j);
+                    // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
+                    // Similar to SSE2-SW, cells are computed in the following order:
+                    //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
+                    //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
+                    //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
+                    
+                    v_M = v_hs[j];
+                    v_e = v_es[j];
+                    
+                    v_hs[j]=v_h1;
+                    
+                    cond =_mm_cmpeq_epi16(v_M,v_zero);
+                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                    __m128i tmp_qp = _mm_load_si128(((__m128i*)q_rev)+j);
+                    falsecase = _mm_adds_epi16(v_M, tmp_qp);
+                    cmp_gen_result(cond, v_zero, falsecase, tmp_out_true, tmp_out_false, v_M);
+                    
+                    
+                    v_h = _mm_max_epi16(v_M, v_e);
+                    
+                    v_h = _mm_max_epi16(v_h, v_f);
+                    
+                    // save H(i,j) to h1 for the next column
+                    v_h1 = v_h;
+                    
+                    cond = _mm_cmpgt_epi16(v_m, v_h);
+                    truecase = v_mj;
+                    falsecase = v_j;
+                    
+                    cmp_int16flag_change(cond,v_zero,cond,tmp_h,tmp_l);
+                    cmp_gen_result(cond, v_mj, falsecase, tmp_out_true, tmp_out_false, v_mj);
+                    cmp_gen_result(cond, v_m, v_h, tmp_out_true, tmp_out_false, v_m);
+                    
+                    v_t=_mm_subs_epu16(v_M, v_oe_del);
+                    
+                    v_e = _mm_subs_epu16(v_e, v_e_del);
+                    //condition+1
+                    // computed E(i+1,j)
+                    v_e = _mm_max_epi16(v_e, v_t);
+                    v_es[j]=v_e;
+                    
+                    //saturation
+                    v_t = _mm_subs_epu16(v_M, v_oe_ins);
+                    v_f = _mm_subs_epu16(v_f, v_e_ins);
+                    //condition+1
+                    v_f = _mm_max_epi16(v_f, v_t);
+                    
+                    //should think about it
+                    cond =_mm_cmplt_epi16(v_j, v_end);
+                    //redo unneccesary search
+                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                    cmp_gen_result(cond, v_h1, v_h_l, tmp_out_true, tmp_out_false, v_h_l);
+                    cmp_gen_result(cond, v_m, v_m_l, tmp_out_true, tmp_out_false, v_m_l);
+                    cmp_gen_result(cond, v_mj, v_mj_l, tmp_out_true, tmp_out_false, v_mj_l);
+                    
+                    
+                }
+                v_j =_mm_set1_epi16(j);
+                
+                v_m = v_m_l;
+                v_mj = v_mj_l;
+                v_h1 = v_h_l;
+                
+                //redo unneccesary search
+                cond = _mm_cmplt_epi16(_mm_set1_epi16(i), v_tlen);
+                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                cmp_gen_result(cond, v_h1, v_zero, tmp_out_true, tmp_out_false, v_h1);
+                
+                v_hs[j]=v_h1;
+                v_es[j]=v_zero;
+                
+                v_j = _mm_min_epi16(v_j, v_end);
+                cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change   j==qlen?
+                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                cond2 = _mm_cmpgt_epi16(v_gscore, v_h1);// when false no change//v_gscore<v_h1?
+                // when true potentially change
+                cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
+                
+                cond = (__m128i)_mm_andnot_ps((__m128)cond2, (__m128)cond);
+                
+                cmp_gen_result(cond, v_i, v_max_ie, tmp_out_true, tmp_out_false, v_max_ie);
+                cmp_gen_result(cond, v_h1, v_gscore, tmp_out_true, tmp_out_false, v_gscore);
+            }
+            //if the search should terminated earlier?
+            uint8_t flag = 0;
+            
+            //m==0 break
+            
+            if(!_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_m, (__m128)v_zero)))
+            {
+                break;//break_flag=1;//when all equal to zero, break;
+            }
+            
+            cond = _mm_cmpgt_epi16(v_m, v_max);// if (ms[process_batch_id] > maxs[process_batch_id])
+            cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+            cmp_gen_result(cond, v_m, v_max, tmp_out_true, tmp_out_false, v_max);
+            cmp_gen_result(cond, v_i, v_max_i, tmp_out_true, tmp_out_false, v_max_i);
+            cmp_gen_result(cond, v_mj, v_max_j, tmp_out_true, tmp_out_false, v_max_j);
+            //max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
+            __m128i v_tmp_maxoff = _mm_abs_epi16( _mm_subs_epi16(v_mj, v_i));
+            v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
+            cmp_gen_result(cond, v_tmp_maxoff, v_max_off, tmp_out_true, tmp_out_false, v_max_off);
+            
+            flag=1;
+            
+            if(zdrop>0&&!_mm_movemask_epi8(cond))//all false
+            {
+                __m128i v_tmp2,v_tmp3,v_tmp4,v_tmp5,v_tmp6,v_tmp7,v_tmp8,cond3;
+                flag=0;
+                v_tmp1 = _mm_subs_epi16(v_i, v_max_i);//i - max_is[process_batch_id]
+                v_tmp2 = _mm_subs_epi16(v_mj, v_max_j);//mjs[process_batch_id] - max_js[process_batch_id]
+                cond = _mm_cmpgt_epi16(v_tmp1, v_tmp2);
+                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                v_tmp3 = _mm_subs_epi16(v_tmp1, v_tmp2);//(i - max_is[process_batch_id]) - (mjs[process_batch_id] - max_js[process_batch_id])
+                v_tmp4 = _mm_mulhrs_epi16(v_tmp3, v_e_del);//(i - max_is[process_batch_id]) - (mjs[process_batch_id] - max_js[process_batch_id])*e_del
+                v_tmp5 = _mm_mulhrs_epi16(v_tmp3, v_e_ins);//(i - max_is[process_batch_id]) - (mjs[process_batch_id] - max_js[process_batch_id])*e_ins
+                v_tmp6 = _mm_subs_epi16(v_max, v_m);//maxs[process_batch_id] - ms[process_batch_id]
+                
+                v_tmp7 = _mm_subs_epi16(v_tmp6, v_tmp4);
+                v_tmp8 = _mm_adds_epi16(v_tmp6, v_tmp5);
+                cond2 = _mm_cmplt_epi16(v_tmp7, v_zdrop);
+                cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
+                
+                cond3 = _mm_cmplt_epi16(v_tmp8, v_zdrop);
+                cmp_int16flag_change(cond3, v_zero, cond3, tmp_h, tmp_l);
+                
+                cond2 = _mm_and_si128(cond, cond2);
+                cond3 = _mm_andnot_si128(cond, cond3);
+                
+                cond = _mm_or_si128(cond2, cond3);
+                if(_mm_movemask_epi8(cond))flag=1;
+                
+            }
+            
+            v_tmp1 = v_end;
+            __min_8(min_end,v_tmp1);
+            v_tmp1 = v_end;
+            __max_8(max_end,v_tmp1);
+            
+            
+            for(j=min_beg; LIKELY(j<min_end); j++)
+            {
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
+            }
+            min_beg = j;
+            for(; LIKELY(j<min_end); j++)
+            {
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+            }
+            max_beg = j;
+            
+            for(j=max_end; LIKELY(j>max_beg); j--)
+            {
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//any one not zero break
+                if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
+            }
+            max_end = j;
+            for(;LIKELY(j>max_beg); j--)
+            {
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+            }
+            min_end = j;
+            v_tmp1 = _mm_set1_epi16(max_end+2);
+            v_end = _mm_min_epi16(v_tmp1, v_qlen);
+        }
+        __m128i v_tmp1;
+        __m128i v_one = _mm_set1_epi16(1);
+        v_tmp1 = _mm_add_epi16(v_max_j, v_one);
+        _mm_store_si128(((__m128i*)g_qle)+grid_process_batch_idx,v_tmp1);
+        v_tmp1 = _mm_add_epi16(v_max_i, v_one);
+        _mm_store_si128(((__m128i*)g_tle)+grid_process_batch_idx,v_tmp1);
+        v_tmp1 = _mm_add_epi16(v_max_ie, v_one);
+        _mm_store_si128(((__m128i*)g_gtle)+grid_process_batch_idx,v_tmp1);
+        
+        _mm_store_si128(((__m128i*)g_gscore)+grid_process_batch_idx,v_gscore);
+        _mm_store_si128(((__m128i*)g_max_off)+grid_process_batch_idx,v_max_off);
+        _mm_store_si128(((__m128i*)g_score)+grid_process_batch_idx,v_max);
+        
+        free(v_hs);
+        free(v_es);
+        
+    }
+    free(qp_buff);
+    free(qp_buff_rev);
+    
+}
+
+
 void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                     uint8_t* rdb_rev,
                     int16_t* qp_db,
@@ -1733,7 +2145,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
             swlen_nxt_id++;
         }
         //process 16 query at a time
-        batch_sw_core(ref_hash_batch_ptr,que_hash_batch_ptr,
+        batch_sw_w_core(ref_hash_batch_ptr,que_hash_batch_ptr,
                       rdb_rev,
                       qp_db,
                       g_h0,//input
@@ -1744,6 +2156,8 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
                       e_del,
                       o_ins,
                       e_ins,
+                      w,
+                      end_bonus,
                       zdrop,
                       
                       g_qle,//result
