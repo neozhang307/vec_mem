@@ -975,18 +975,28 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             __m128i tmp_out_true,tmp_out_false;
             
             //compute the end position with w;
-            v_tmp1 = _mm_add_epi16(v_i, l_v_w);
-            v_tmp1 = _mm_add_epi16(v_tmp1, _mm_set1_epi16(1));
-            v_end = _mm_min_epi16(v_tmp1, v_end);
+          //  v_tmp1 = _mm_add_epi16(v_i, l_v_w);
+          //  v_tmp1 = _mm_add_epi16(v_tmp1, _mm_set1_epi16(1));
+          //  v_end = _mm_min_epi16(v_tmp1, v_end);
+            
             __m128i tmplen = v_end;
             __max_8(max_end, tmplen);
+            int16_t tmp ;//= i-w;
 
+            //update the begin and end position according to w
+            tmp = i-w;
+            min_beg = min_beg>tmp?min_beg:tmp;
+            
+            tmp = i+w+1;
+            max_end = max_end<tmp?max_end:tmp;
+            
             //compute the begin position with w
-            v_tmp1 = _mm_sub_epi16(v_i,l_v_w);
-            v_tmp1 = _mm_max_epi16(v_tmp1, v_beg);
-            int16_t min_tmp;
-            __min_8(min_tmp, v_tmp1);;
-            min_beg=min_beg>min_tmp?min_beg:min_tmp;
+//            v_tmp1 = _mm_sub_epi16(v_i,l_v_w);
+//            v_tmp1 = _mm_max_epi16(v_tmp1, v_beg);
+//            int16_t min_tmp;
+//            __min_8(min_tmp, v_tmp1);;
+//            min_beg=min_beg>min_tmp?min_beg:min_tmp;
+            
             //end possition should be updated
             /***********keep***********/
             uint8_t t_targets[8];
