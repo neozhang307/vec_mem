@@ -1515,6 +1515,8 @@ void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int
     }
 }
 
+
+
 #define MAX_BAND_TRY 2
 #include"kvec.h"
 typedef struct
@@ -1523,7 +1525,39 @@ typedef struct
     int * a;
 }i_vec;
 
-void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
+void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int end_bonus, int zdrop){
+    int mod_size = v_id.n%16;
+    if(mod_size!=0&&mod_size < 8)
+    {
+        int sw_iter = (v_id.n/16)*16;
+        for(; sw_iter<v_id.n;++sw_iter)
+        {
+            swrst_t *sw = swrts+v_id.a[sw_iter];
+            swseq_t *seq = sw->sw_seq;
+            
+            sw->pre_score = sw->score;
+            
+            sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+        }
+        v_id.n-=mod_size;
+    }
+    
+    for(int sw_iter=0; sw_iter<v_id.n;++sw_iter)
+    {
+        //init qphash
+        //init refhash
+        //process 16 SW at a time
+        
+        swrst_t *sw = swrts+v_id.a[sw_iter];
+        swseq_t *seq = sw->sw_seq;
+        
+        sw->pre_score = sw->score;
+        
+        sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+    }
+}
+
+void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
     
@@ -1547,19 +1581,12 @@ void ksw_extend_batch_w(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
     }
     
     for (int i = 0; i < MAX_BAND_TRY; ++i){
+        ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, end_bonus, zdrop);
+
         for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
         {
             swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
-            swseq_t *seq = sw->sw_seq;
-            
-            sw->pre_score = sw->score;
-            
-            sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-        }
-        for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
-        {
-            swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
-            swseq_t *seq = sw->sw_seq;
+       //     swseq_t *seq = sw->sw_seq;
             if (!(sw->score ==  sw->pre_score || sw->max_off < (sw->w>>1) + (sw->w>>2)))
             {
                 sw->w = ini_w << (sw_iter+1);
