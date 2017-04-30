@@ -1522,7 +1522,7 @@ typedef struct
     int * a;
 }i_vec;
 //v_id would indicate the value's needed to be extend in swrts, which should not be zero.
-void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int end_bonus, int zdrop){
+void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
 //    int mod_size = v_id.n%16;
 //    if(mod_size!=0&&mod_size < 8)
 //    {
@@ -1811,7 +1811,8 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
     }
     
     for (int i = 0; i < MAX_BAND_TRY; ++i){
-        ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, end_bonus, zdrop);
+        int w =ini_w << i;
+        ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
 
         for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
         {
@@ -1819,8 +1820,14 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
        //     swseq_t *seq = sw->sw_seq;
             if (!(sw->score ==  sw->pre_score || sw->max_off < (sw->w>>1) + (sw->w>>2)))
             {
-                sw->w = ini_w << (sw_iter+1);
+          //      sw->w = ini_w << (i+1);
+#ifdef SWBATCHDB
+                fprintf(stderr,"pass of %d",i);
+#endif
                 kv_push(int,swrstid_nxt,swrstid_cur.a[sw_iter]);
+            }
+            else{//means finish
+                sw->w = w;
             }
             
         }
