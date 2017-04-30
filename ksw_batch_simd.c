@@ -800,6 +800,7 @@ void batch_sw_w_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    
                    int m,
                    
+                     int max_m,
                    int o_del,
                    int e_del,
                    int o_ins,
@@ -833,7 +834,7 @@ void batch_sw_w_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 } while (0)
     
     //  int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
-    __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins,v_zdrop,v_w;
+    __m128i v_zero, v_oe_del, v_e_del, v_oe_ins, v_e_ins,v_zdrop,v_w, v_max_m;
     v_zdrop = _mm_set1_epi16(zdrop);
     v_zero = _mm_set1_epi32(0);
     v_oe_del = _mm_set1_epi16(o_del + e_del);
@@ -842,6 +843,7 @@ void batch_sw_w_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
     v_e_ins = _mm_set1_epi16(e_ins);
     
     v_w = _mm_set1_epi16(w);
+    v_max_m = _mm_set1_epi16(max_m);
 #define cmp_int16flag_change(ori_flag,v_zero,out_flag,tmp_h,tmp_l) do{\
 (out_flag) = ori_flag;\
 }while(0)
@@ -879,11 +881,13 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     
     
     //inreducable
-    __m128i v_end;
+    __m128i v_end, v_beg;
     __m128i v_max, v_max_i, v_max_j, v_max_ie, v_gscore,v_max_off;
     //reducable
     __m128i v_h0 = _mm_set1_epi32(0);
     
+    //init w
+
     for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
     {
         const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
@@ -947,24 +951,42 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         /************************/
         
         v_end = v_qlen;
+        v_beg = v_zero;
         
-        __m128i tmplen = v_qlen;
+        //init w;
+        __m128i l_v_w = v_w;
+        
+        
+       // __m128i tmplen = v_qlen;
         min_beg = 0;
         max_beg = 0;
-        tmplen = v_end;
-        __max_8(max_end, tmplen);
-        tmplen = v_end;
-        __max_8(min_end, tmplen);
+//        tmplen = v_end;
+//        __max_8(max_end, tmplen);
+//        tmplen = v_end;
+//        __max_8(min_end, tmplen);
         /************************/
         //MAIN SW
         for (int16_t i = 0; LIKELY(i < maxtlen) ; ++i) {
+            __m128i v_i = _mm_set1_epi16(i);
+            
             __m128i v_tmp1;
             __m128i cond,cond2;
             __m128i truecase,falsecase;
             __m128i tmp_out_true,tmp_out_false;
             
+            //compute the end position with w;
+            v_tmp1 = _mm_add_epi16(v_i, l_v_w);
+            v_tmp1 = _mm_add_epi16(v_tmp1, _mm_set1_epi16(1));
+            v_end = _mm_min_epi16(v_tmp1, v_end);
             __m128i tmplen = v_end;
             __max_8(max_end, tmplen);
+
+            //compute the begin position with w
+            v_tmp1 = _mm_sub_epi16(v_i,l_v_w);
+            v_tmp1 = _mm_max_epi16(v_tmp1, v_beg);
+            int16_t min_tmp;
+            __min_8(min_tmp, v_tmp1);;
+            min_beg=min_beg>min_tmp?min_beg:min_tmp;
             //end possition should be updated
             /***********keep***********/
             uint8_t t_targets[8];
@@ -980,7 +1002,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
             }
             transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
-            __m128i v_i = _mm_set1_epi16(i);
+            
             /***********************/
             uint16_t j;
             {
@@ -2082,6 +2104,17 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     //query profile
     int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*m*sizeof(int16_t));//should be usingned ,change in the future
     memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*m);
+    
+    int max_m=0;
+    int k = m * m;
+    {
+        int i=0;
+        for (max_m = 0; i < k; ++i) // get the max score
+            max_m = max_m > mat[i]? max_m : mat[i];
+    }
+#ifdef DEBUG
+    fprintf(stderr,"the mx m is %d/%d:%d\n",max_m,mat[0],m);
+#endif
     for(int i=0; i<resize; i++)
     {
         swrst_t *sw = swrts+(swlen_resized[i]>>32);
@@ -2152,6 +2185,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
                       
                       m,
                       
+                      max_m,
                       o_del,
                       e_del,
                       o_ins,
