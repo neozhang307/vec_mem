@@ -954,9 +954,19 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         v_beg = v_zero;
         
         //init w;
-        __m128i l_v_w = v_w;
+        __m128i tmpqlen = v_qlen;
+        int16_t minqlen;
+        __min_8(minqlen, tmpqlen);
+        int l_w = w;
         
+        int max_ins = (int)((double)(minqlen * max_m + end_bonus - o_ins) / e_ins + 1.);
+        max_ins = max_ins > 1? max_ins : 1;
         
+        int max_del = (int)((double)(minqlen * max_m + end_bonus - o_del) / e_del + 1.);
+        max_del = max_del > 1? max_del : 1;
+        
+        l_w = l_w < max_ins? l_w : max_ins;
+        l_w = l_w < max_del? l_w : max_del;
        // __m128i tmplen = v_qlen;
         min_beg = 0;
         max_beg = 0;
@@ -984,10 +994,10 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             int16_t tmp ;//= i-w;
 
             //update the begin and end position according to w
-            tmp = i-w;
+            tmp = i-l_w;
             min_beg = min_beg>tmp?min_beg:tmp;
             
-            tmp = i+w+1;
+            tmp = i+l_w+1;
             max_end = max_end<tmp?max_end:tmp;
             
             //compute the begin position with w
