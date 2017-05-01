@@ -2352,7 +2352,9 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                     cur_seq_l->rlen = 0;
                 }
             }
-            ksw_extend_batch2(b_sw_vals_left, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+//            ksw_extend_batch2(b_sw_vals_left, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+            ksw_extend_batchw(b_sw_vals_left, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip5, opt->zdrop);
+
             for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// right extention init
             {
                 sw_itv_val tmp_sw_itv = sw_nxt_process.a[cur_ptr];
@@ -2390,7 +2392,8 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                 }
             }
 
-            ksw_extend_batch2(b_sw_vals_right, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+//            ksw_extend_batch2(b_sw_vals_right, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+            ksw_extend_batchw(b_sw_vals_right, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip3, opt->zdrop);
             for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// post process (left & right)
             {
                 int max_off[2];
