@@ -1104,30 +1104,35 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                     v_f = _mm_max_epi16(v_f, v_t);
                     
                     //should think about it
-                    cond =_mm_cmplt_epi16(v_j, v_end);
-                    //redo unneccesary search
-                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                    cmp_gen_result(cond, v_h1, v_h_l, tmp_out_true, tmp_out_false, v_h_l);
-                    cmp_gen_result(cond, v_m, v_m_l, tmp_out_true, tmp_out_false, v_m_l);
-                    cmp_gen_result(cond, v_mj, v_mj_l, tmp_out_true, tmp_out_false, v_mj_l);
-                    
-                    
+//                    cond =_mm_cmplt_epi16(v_j, v_qlen);
+//                    //redo unneccesary search
+//                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+//                    if(_mm_movemask_ps(cond))
+//                    {
+//                        cmp_gen_result(cond, v_h1, v_h_l, tmp_out_true, tmp_out_false, v_h_l);
+//                        cmp_gen_result(cond, v_m, v_m_l, tmp_out_true, tmp_out_false, v_m_l);
+//                        cmp_gen_result(cond, v_mj, v_mj_l, tmp_out_true, tmp_out_false, v_mj_l);
+//                    }
                 }
+                //redo qlen related unnecessary change
+//                if(_mm_movemask_ps(cond))
+//                {
+//                    v_m = v_m_l;
+//                    v_mj = v_mj_l;
+//                    v_h1 = v_h_l;
+//                }
                 v_j =_mm_set1_epi16(j);
                 
-                v_m = v_m_l;
-                v_mj = v_mj_l;
-                v_h1 = v_h_l;
                 
                 //redo unneccesary search
-                cond = _mm_cmplt_epi16(_mm_set1_epi16(i), v_tlen);
-                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-                cmp_gen_result(cond, v_h1, v_zero, tmp_out_true, tmp_out_false, v_h1);
+    //            cond = _mm_cmplt_epi16(v_i, v_tlen);
+      //          cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+        //        cmp_gen_result(cond, v_h1, v_zero, tmp_out_true, tmp_out_false, v_h1);
                 
                 v_hs[j]=v_h1;
                 v_es[j]=v_zero;
                 
-                v_j = _mm_min_epi16(v_j, v_end);
+              //  v_j = _mm_min_epi16(v_j, v_end);
                 cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change   j==qlen?
                 cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
                 cond2 = _mm_cmpgt_epi16(v_gscore, v_h1);// when false no change//v_gscore<v_h1?
@@ -1202,12 +1207,12 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
             min_beg = j;
-            for(; LIKELY(j<min_end); j++)
-            {
-                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
-                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
-            }
-            max_beg = j;
+//            for(; LIKELY(j<min_end); j++)
+//            {
+//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+//            }
+//            max_beg = j;
             
             for(j=max_end; LIKELY(j>max_beg); j--)
             {
@@ -1215,12 +1220,12 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
             max_end = j;
-            for(;LIKELY(j>max_beg); j--)
-            {
-                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
-                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
-            }
-            min_end = j;
+//            for(;LIKELY(j>max_beg); j--)
+//            {
+//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+//            }
+//            min_end = j;
             v_tmp1 = _mm_set1_epi16(max_end+2);
             v_end = _mm_min_epi16(v_tmp1, v_qlen);
         }
