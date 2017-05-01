@@ -1197,8 +1197,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             
             v_tmp1 = v_end;
             __min_8(min_end,v_tmp1);
-            v_tmp1 = v_end;
-            __max_8(max_end,v_tmp1);
+            //v_tmp1 = v_end;
+            //__max_8(max_end,v_tmp1);
             
             
             for(j=min_beg; LIKELY(j<min_end); j++)

@@ -2234,26 +2234,26 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
                         // NEO: Filter
                         int i;
                         for (i = 0; i < av->n; ++i) { // test whether extension has been made before
-                                    mem_alnreg_t *p = &av->a[i];
-                                    int64_t rd;
-                                    int qd, w, max_gap, max_overlap;
-                                    if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
-                                    if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
-                                    // qd: distance ahead of the seed on query; rd: on reference
-                                    qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
-                                    max_overlap = min(qd,rd);
-                                    max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
-                                    w = max_gap < p->w? max_gap : p->w;
-                                    //w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
-                                    if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
-                                    // similar to the previous four lines, but this time we look at the region behind
-                                    qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
-                                    max_overlap = min(qd,rd);
-                                    max_gap = cal_max_gap(opt, max_overlap);
-                                    w = max_gap < p->w? max_gap : p->w;
-                                    //w = max_gap-max_overlap;// < p->w? max_gap : p->w;
-                                    if (qd - rd < w && rd - qd < w) break;
-                                }
+                            mem_alnreg_t *p = &av->a[i];
+                            int64_t rd;
+                            int qd, w, max_gap, max_overlap;
+                            if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
+                            if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
+                            // qd: distance ahead of the seed on query; rd: on reference
+                            qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+                            max_overlap = min(qd,rd);
+                            max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
+                            w = max_gap < p->w? max_gap : p->w;
+                            //w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
+                            if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
+                            // similar to the previous four lines, but this time we look at the region behind
+                            qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
+                            max_overlap = min(qd,rd);
+                            max_gap = cal_max_gap(opt, max_overlap);
+                            w = max_gap < p->w? max_gap : p->w;
+                            //w = max_gap-max_overlap;// < p->w? max_gap : p->w;
+                            if (qd - rd < w && rd - qd < w) break;
+                        }
                                 
                         // NEO:
                         // rescue the seed marked as overlap, if it would lead to a different result
