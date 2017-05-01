@@ -2562,6 +2562,18 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
    // free(seeds_end);
 }
 
+
+static void worker1_batch(void *data, int start, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+   
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        w->regs[i] = mem_align1_core(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+    }
+    
+
+}
 /*********************************************************/
 /*********************************************************/
 /*this function is modified by Lingqi Zhang*/
@@ -2599,14 +2611,14 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     //fprintf(stderr,"=====> size of swrst_t is %ld   <=====\n", sizeof(swrst_t));
     fprintf(stderr,"=====> Processing %d batchs of read <=====\n", n);
     fprintf(stderr,"=====> Processing %d batchs of read iner <=====\n", batch_size);
-    kt_for_batch2(opt->n_threads, batch_size, worker_mod_batch, &w, n);
+    kt_for_batch2(opt->n_threads, batch_size, worker1_batch, &w, n);
     
   //  free(w.ext_val);
 #ifdef DEBUG
     printcount();
     reset();
 #endif
-    kt_for_batch(opt->n_threads, 10*(opt->flag&MEM_F_PE)?2:1, worker_aln2regs, &w, n);
+//    kt_for_batch(opt->n_threads, 10*(opt->flag&MEM_F_PE)?2:1, worker_aln2regs, &w, n);
     
     
     for (i = 0; i < opt->n_threads; ++i)
