@@ -1978,7 +1978,7 @@ void mem_chain_extent_batch(const mem_opt_t *opt, qext_t* ext_base, size_t* chn_
     free(g_srt);
 }
 
-static void worker_mod_batch(void *data, int start, int batch, int tid)
+static void worker_mod_batch2(void *data, int start, int batch, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
     qext_t* ext_base = malloc(sizeof(qext_t)*batch);//&w->ext_val[batch*tid];
@@ -2040,6 +2040,527 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
     free(ext_base);
     free(local_chn);
     free(chn_idx);
+}
+typedef struct
+{
+    mem_alnreg_v*av;
+    mem_alnreg_t*a;
+    mem_seed_t* s;
+    
+    const mem_chain_t*c;
+    int64_t *rmax;
+    
+    uint8_t *rseq;
+    const uint8_t *query ;
+    
+    int l_query;
+    
+}sw_itv_val;
+typedef struct
+{
+    size_t n, m;
+    sw_itv_val* a;
+}sw_itv_vec;
+
+
+static void worker_mod_batch(void *data, int start, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    mem_chain_v *local_chn = malloc(sizeof(mem_chain_v)*batch);
+    mem_alnreg_v *local_regs = malloc(sizeof(mem_alnreg_v)*batch);
+    
+    const mem_opt_t *opt = w->opt;
+    const bntseq_t *bns = w->bns;
+    const uint8_t *pac = w->pac;
+    size_t * global_chn_id = malloc(sizeof(size_t)*(batch+1));
+    global_chn_id[0]=0;
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        mem_chain_v tmp_chn = mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+        local_chn[j] = tmp_chn;
+        global_chn_id[j+1] = global_chn_id[j]+tmp_chn.n;
+    }
+    
+    //initialize of SW
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        mem_alnreg_v* regs = &local_regs[j];
+        kv_init(*regs);
+    }
+    //batch values:
+
+    int64_t* g_rmaxs = malloc(sizeof(int64_t)*2*global_chn_id[batch]);
+    mem_alnreg_v* global_regs = malloc(sizeof(mem_alnreg_v)*global_chn_id[batch]);
+    mem_chain_t* global_chain_t = malloc(sizeof(mem_chain_t)*global_chn_id[batch]);
+//    swseq_t* g_forward = malloc(sizeof(swseq_t*)*global_chn_id[batch]);
+//    swseq_t* g_backward = malloc(sizeof(swseq_t*)*global_chn_id[batch]);
+//    
+//    swrst_t* g_swfwd = malloc(sizeof(swrst_t*)*global_chn_id[batch]);
+//    swrst_t* g_swbwd = malloc(sizeof(swrst_t*)*global_chn_id[batch]);
+//    
+ //   swseq_t * batch_swseq = malloc(sizeof(swseq_t)*batch);
+//    swrst_t * batch_swfwd = malloc(sizeof(swrst_t)*batch);
+    for(int i=0; i<global_chn_id[batch]; i++)
+    {
+        kv_init(global_regs[i]);
+    }
+ //   uint64_t **global_srt = malloc(sizeof(uint64_t*)*batch);
+   // uint8_t **global_rseq = malloc(sizeof(uint8_t*)*batch);
+    int* global_seqlen = malloc(sizeof(int)*global_chn_id[batch]);
+    char* * global_seq = malloc(sizeof(char*)*global_chn_id[batch]);
+    uint8_t **global_rseq = malloc(sizeof(uint8_t*)*global_chn_id[batch]);
+    uint64_t ** global_srt = malloc(sizeof(uint64_t*)* global_chn_id[batch]);
+    //expend the second loop
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        mem_chain_v chn_v = local_chn[j];
+        for (int l_chn_id = 0; l_chn_id < chn_v.n; ++l_chn_id) {
+            
+            global_chain_t[(global_chn_id[j]+l_chn_id)] = chn_v.a[l_chn_id];
+            global_seqlen[(global_chn_id[j]+l_chn_id)] =w->seqs[i].l_seq;
+            global_seq[(global_chn_id[j]+l_chn_id)]=w->seqs[i].seq;
+        }
+    }
+    
+    //for(int j=0; j<batch; j++)
+    int SW_batch = batch*2;
+    int max_c = global_chn_id[batch];
+    int seg = (max_c+SW_batch-1)/SW_batch;
+    int next_process = SW_batch;
+    int left = max_c;
+    //for(int g_c_id=0; g_c_id<max_c; g_c_id++)
+    
+    int *seeds_idx = malloc(sizeof(int)*SW_batch);
+    sw_itv_vec sw_nxt_process;
+    kv_init(sw_nxt_process);
+  //  int *seeds_end = malloc(sizeof(int)*SW_batch);
+    
+    for(int seg_id=0; seg_id<seg; seg_id++)
+    {
+        next_process = next_process<left?next_process:left;
+        left-=SW_batch;
+        for(int i=0; i<next_process; i++)//process batch of data
+        {
+            {
+                int g_c_id = SW_batch*seg_id+i;
+                mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
+                
+                int l_query = global_seqlen[g_c_id];//l_seq;
+               
+                const mem_chain_t*c = p;
+                
+                int i, rid;// aw[2]; // aw: actual bandwidth used in extension
+                int64_t l_pac = bns->l_pac,/* rmax[2],*/  max = 0;
+                
+                
+                int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
+                
+                if (c->n == 0) return;
+                // get the max possible span
+                // NEO: should set on CPU
+                // NEO: can we orgnize query by max possible span?
+                rmax[0] = l_pac<<1; rmax[1] = 0;
+                for (i = 0; i < c->n; ++i) {
+                    int64_t b, e;
+                    const mem_seed_t *t = &c->seeds[i];
+                    b = t->rbeg - (t->qbeg + cal_max_gap(opt, t->qbeg));
+                    e = t->rbeg + t->len + ((l_query - t->qbeg - t->len) + cal_max_gap(opt, l_query - t->qbeg - t->len));
+                    rmax[0] = rmax[0] < b? rmax[0] : b;
+                    rmax[1] = rmax[1] > e? rmax[1] : e;
+                    if (t->len > max) max = t->len;
+                }
+                rmax[0] = rmax[0] > 0? rmax[0] : 0;
+                rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
+                if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
+                    if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
+                    else rmax[0] = l_pac;
+                }
+                // retrieve the reference sequence
+                uint8_t *rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
+                global_rseq[g_c_id] = rseq;
+                // global_rseq[j]=rseq;
+                assert(c->rid == rid);
+                
+                // NEO:
+                // external sorting
+                // Generate str: str is an index,   high 32 bit is SW score (sorted)
+                //                                  low 32 bit is real index
+                uint64_t * srt = malloc(c->n * 8);
+                   //     global_srt[j] = srt;
+                for (i = 0; i < c->n; ++i)
+                    srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
+                
+                ks_introsort_64(c->n, srt);// NEO: srt in decending order
+                global_srt[g_c_id] = srt;
+            }
+        }
+       
+        /*
+         NEO's plan:
+         outer loop: while(1)
+         inner loop, filter produce next seeds,
+         sizeof(seeds)==0 break;
+         extend base on seeds.
+         post process.
+         */
+        for(int cur_process_id=0; cur_process_id<next_process; cur_process_id++)//process batch of data
+        {
+            int g_c_id = SW_batch*seg_id+cur_process_id;
+            seeds_idx[cur_process_id] = global_chain_t[g_c_id].n-1;
+        }
+        while(1)
+        {
+            for(int cur_process_id=0; cur_process_id<next_process; cur_process_id++)//process batch of data
+            {
+            // NEO: should do modification in this part in the future
+
+                int g_c_id = SW_batch*seg_id+cur_process_id;
+                uint64_t *srt = global_srt[g_c_id];
+                uint8_t *rseq = global_rseq[g_c_id];
+                int64_t *rmax = &g_rmaxs[(g_c_id)*2];//&b_rmaxs[j*2];
+                const uint8_t *query = (uint8_t*)global_seq[g_c_id];//seq;
+               // mem_alnreg_v* regs = ;
+                mem_alnreg_v*av = &global_regs[g_c_id];
+                mem_chain_t*p = &global_chain_t[g_c_id];//&chn_v.a[l_chn_id];
+                const mem_chain_t*c = p;
+                int l_query = global_seqlen[g_c_id];//l_seq;
+                
+                
+                for (; seeds_idx[cur_process_id] >= 0; --seeds_idx[cur_process_id]) {
+                    {
+                        mem_seed_t *s = &c->seeds[(uint32_t)srt[seeds_idx[cur_process_id]]];
+                        // NEO: this part is belong to CPU, should migrate this to the end of this function.
+                        // Test if the seed is in future align
+                        // NEO: Filter
+                        int i;
+                        for (i = 0; i < av->n; ++i) { // test whether extension has been made before
+                                    mem_alnreg_t *p = &av->a[i];
+                                    int64_t rd;
+                                    int qd, w, max_gap, max_overlap;
+                                    if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
+                                    if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
+                                    // qd: distance ahead of the seed on query; rd: on reference
+                                    qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+                                    max_overlap = min(qd,rd);
+                                    max_gap = cal_max_gap(opt, max_overlap); // the maximal gap allowed in regions ahead of the seed
+                                    w = max_gap < p->w? max_gap : p->w;
+                                    //w = max_gap -max_overlap;//< p->w? max_gap : p->w; // bounded by the band width
+                                    if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
+                                    // similar to the previous four lines, but this time we look at the region behind
+                                    qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
+                                    max_overlap = min(qd,rd);
+                                    max_gap = cal_max_gap(opt, max_overlap);
+                                    w = max_gap < p->w? max_gap : p->w;
+                                    //w = max_gap-max_overlap;// < p->w? max_gap : p->w;
+                                    if (qd - rd < w && rd - qd < w) break;
+                                }
+                                
+                        // NEO:
+                        // rescue the seed marked as overlap, if it would lead to a different result
+                        if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
+                                    if (bwa_verbose >= 4)
+                                        printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
+                                               seeds_idx[cur_process_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+                                    
+                                    //NEO: block structure
+                                    for (i = seeds_idx[cur_process_id] + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
+                                        const mem_seed_t *t;
+                                        if (srt[i] == 0) continue;
+                                        t = &c->seeds[(uint32_t)srt[i]];
+                                        if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
+                                        if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
+                                        if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
+                                    }
+                                    
+                                    if (i == c->n) { // no overlapping seeds; then skip extension
+                                        srt[seeds_idx[cur_process_id]] = 0; // mark that seed extension has not been performed
+                                        continue;
+                                    }
+                                    if (bwa_verbose >= 4)
+                                        printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", seeds_idx[cur_process_id]);
+                                }
+                        sw_itv_val tmp_sw_itv;
+                        tmp_sw_itv.s = s;
+                        tmp_sw_itv.av = av;
+                        
+//                        mem_alnreg_t* a = kv_pushp(mem_alnreg_t, *av);
+//                        memset(a, 0, sizeof(mem_alnreg_t));
+//                        a->w  = opt->w;
+//                        a->score = a->truesc = -1;
+//                        a->rid = c->rid;
+//                        tmp_sw_itv.a=a;
+                        
+                        tmp_sw_itv.query = query;
+                        tmp_sw_itv.rseq = rseq;
+                        tmp_sw_itv.c = c;
+                        tmp_sw_itv.l_query = l_query;
+                        tmp_sw_itv.rmax=rmax;
+                        //init the values used in SW extent
+                        kv_push(sw_itv_val, sw_nxt_process, tmp_sw_itv);
+                    }
+                }
+            }
+                    /**********************/
+#ifdef DEBUG
+            if(sw_nxt_process.n<SW_batch)
+                fprintf(stderr,"counting %ld\n",sw_nxt_process.n);
+#endif
+            if(sw_nxt_process.n==0)goto endwhile;
+                    // mem_alnreg_v*av = regs;
+            
+            swseq_t* b_sw_seq_left = malloc(sizeof(swseq_t)*sw_nxt_process.n);
+            swrst_t* b_sw_vals_left = malloc(sizeof(swrst_t)*sw_nxt_process.n);
+            swseq_t* b_sw_seq_right = malloc(sizeof(swseq_t)*sw_nxt_process.n);
+            swrst_t* b_sw_vals_right = malloc(sizeof(swrst_t)*sw_nxt_process.n);
+            memset(b_sw_seq_left, 0, sizeof(swseq_t));
+            memset(b_sw_seq_right, 0, sizeof(swseq_t));
+            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)//init sw related values
+            {
+                swseq_t* cur_seq = &b_sw_seq_right[cur_ptr];
+                swrst_t* cur_srt = &b_sw_vals_right[cur_ptr];
+                cur_srt->sw_seq=cur_seq;
+                cur_seq = &b_sw_seq_left[cur_ptr];
+                cur_srt = &b_sw_vals_left[cur_ptr];
+                cur_srt->sw_seq=cur_seq;
+            }
+            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++) // left extension init
+            {
+                int64_t tmp;
+                sw_itv_val tmp_sw_itv = sw_nxt_process.a[cur_ptr];
+                mem_seed_t* s = tmp_sw_itv.s;
+                const uint8_t *query =tmp_sw_itv.query;
+                uint8_t *rseq=tmp_sw_itv.rseq;
+                int64_t* rmax = tmp_sw_itv.rmax;
+                
+                swrst_t* cur_srt_l = &b_sw_vals_left[cur_ptr];
+                swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+                
+                // MAIN SW
+                if (s->qbeg) { // left extension init
+                    uint8_t *rs, *qs;
+                    
+                    qs = malloc(s->qbeg);
+                    for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];//query
+                    tmp = s->rbeg - rmax[0];
+                    rs = malloc(tmp);
+                    for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];//rseq
+                    cur_seq_l->qlen = s->qbeg;
+                    cur_seq_l->query = qs;
+                    cur_seq_l->rlen = tmp;
+                    cur_seq_l->ref = rs;
+                    cur_srt_l->h0 = s->len * opt->a;
+                }
+                else{
+                    cur_seq_l->qlen = 0;//NEO: just set a flag
+                    cur_seq_l->rlen = 0;
+                }
+            }
+//            ksw_extend_batch2(b_sw_vals_left, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+            ksw_extend_batchw(b_sw_vals_left, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip5, opt->zdrop);
+
+            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// right extention init
+            {
+                sw_itv_val tmp_sw_itv = sw_nxt_process.a[cur_ptr];
+                mem_seed_t* s = tmp_sw_itv.s;
+                const uint8_t *query =tmp_sw_itv.query;
+                uint8_t *rseq=tmp_sw_itv.rseq;
+                int l_query = tmp_sw_itv.l_query;
+                int64_t* rmax = tmp_sw_itv.rmax;
+                
+                swrst_t* cur_srt_l = &b_sw_vals_left[cur_ptr];
+                swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+                
+                if (cur_seq_l->qlen==0) {
+                    cur_srt_l->score = s->len * opt->a;
+                }
+                
+                swrst_t* cur_srt_r = &b_sw_vals_right[cur_ptr];
+                swseq_t* cur_seq_r = cur_srt_r->sw_seq;
+                if (s->qbeg + s->len != l_query) { // right extension init
+//                    int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+                    int qe,re;
+                    qe = s->qbeg + s->len;
+                    re = s->rbeg + s->len - rmax[0];
+                    assert(re >= 0);
+                    //NEO: warp or block
+                    cur_seq_r->qlen = l_query - qe;
+                    cur_seq_r->query = query + qe;
+                    cur_seq_r->rlen = rmax[1] - rmax[0] - re;
+                    cur_seq_r->ref = rseq + re;
+                    cur_srt_r->h0 = b_sw_vals_left[cur_ptr].score;
+                }
+                else{
+                    cur_seq_r->qlen = 0;
+                    cur_seq_r->rlen = 0;
+                }
+            }
+
+//            ksw_extend_batch2(b_sw_vals_right, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+            ksw_extend_batchw(b_sw_vals_right, (uint32_t)sw_nxt_process.n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip3, opt->zdrop);
+            for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)// post process (left & right)
+            {
+                int max_off[2];
+                sw_itv_val tmp_sw_itv = sw_nxt_process.a[cur_ptr];
+                mem_alnreg_v*av = tmp_sw_itv.av;
+                mem_seed_t* s = tmp_sw_itv.s;
+                const mem_chain_t* c = tmp_sw_itv.c;
+                int l_query = tmp_sw_itv.l_query;
+                int64_t* rmax = tmp_sw_itv.rmax;
+                swrst_t* cur_srt_r = &b_sw_vals_right[cur_ptr];
+                swseq_t* cur_seq_r = cur_srt_r->sw_seq;
+                
+                mem_alnreg_t* a = kv_pushp(mem_alnreg_t, *av);
+                memset(a, 0, sizeof(mem_alnreg_t));
+                a->w  = opt->w;
+                a->score = a->truesc = -1;
+                a->rid = c->rid;
+                swrst_t* cur_srt_l = &b_sw_vals_left[cur_ptr];
+                swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+                if (cur_seq_l->qlen!=0) {// left extension poster
+                    a->score = cur_srt_l->score;
+                    int qle, tle, gtle, gscore;
+                    qle = cur_srt_l->qle;
+                    tle = cur_srt_l->tle;
+                    gtle = cur_srt_l->gtle;
+                    gscore = cur_srt_l->gscore;
+                    max_off[0]=cur_srt_l->max_off;
+                    
+                    // check whether we prefer to reach the end of the query
+                    if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
+                        a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
+                        a->truesc = a->score;
+                    } else { // to-end extension
+                        a->qb = 0, a->rb = s->rbeg - gtle;
+                        a->truesc = gscore;
+                    }
+                    uint8_t *rs, *qs;
+                    rs = (uint8_t *)cur_seq_l->ref;
+                    qs = (uint8_t *)cur_seq_l->query;
+                    free(qs); free(rs);
+                }
+                else
+                {
+                    a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
+                    // swrst_t* cur_srt = &b_sw_vals_left[cur_ptr];
+                }
+                
+                if(cur_seq_r->qlen!=0)//right extension post process
+                {
+                    int qle, tle, qe, re, gtle, gscore;
+                    int sc0=cur_srt_r->h0;
+                    a->score = cur_srt_r->score;
+                    qle = cur_srt_r->qle;
+                    tle = cur_srt_r->tle;
+                    gtle = cur_srt_r->gtle;
+                    gscore = cur_srt_r->gscore;
+                    max_off[1]=cur_srt_r->max_off;
+                    qe = s->qbeg + s->len;
+                    re = s->rbeg + s->len - rmax[0];
+                            // similar to the above
+                    if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
+                        a->qe = qe + qle, a->re = rmax[0] + re + tle;
+                        a->truesc += a->score - sc0;
+                    } else { // to-end extension
+                        a->qe = l_query, a->re = rmax[0] + re + gtle;
+                        a->truesc += gscore - sc0;
+                    }
+                }
+                else
+                {
+                    a->qe = l_query, a->re = s->rbeg + s->len;
+                }
+                        // compute seedcov
+                int i;
+                for (i = 0, a->seedcov = 0; i < c->n; ++i) {
+                    const mem_seed_t *t = &c->seeds[i];
+                    if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) // seed fully contained
+                        a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
+                }
+                a->seedlen0 = s->len;
+                a->frac_rep = c->frac_rep;//c
+            }
+            
+            sw_nxt_process.n=0;//set zero
+            free(b_sw_seq_left);
+            free(b_sw_vals_left);
+            free(b_sw_seq_right);
+            free(b_sw_vals_right);
+        }
+    endwhile:
+        for(int i=0; i<next_process; i++)//process batch of data
+        {
+            {
+                int g_c_id = SW_batch*seg_id+i;
+                uint64_t *srt = global_srt[g_c_id];
+                uint8_t *rseq = global_rseq[g_c_id];
+                free(srt);
+                free(rseq);
+            }
+        }
+        
+    }
+    
+    //save result
+    //expanded regs (global_regs) to original regs (local_regs)
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        mem_alnreg_v* cur_regs = &local_regs[j];
+        for (int g_chn_id = global_chn_id[j];  g_chn_id< global_chn_id[j+1]; ++g_chn_id) {
+            mem_alnreg_v* regs = &global_regs[g_chn_id];
+            for(int i=0; i<regs->n; i++)
+            {
+                kv_push(mem_alnreg_t, *cur_regs, regs->a[i]);
+            }
+            free(regs->a);
+        }
+    }
+    free(global_regs);
+  //  free(global_srt);
+
+
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        char *seq = w->seqs[i].seq;
+        mem_alnreg_v* regs = local_regs+j;
+        regs->n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs->n, regs->a);
+        if (bwa_verbose >= 4) {
+            err_printf("* %ld chains remain after removing duplicated chains\n", regs->n);
+            for (int i = 0; i < regs->n; ++i) {
+                mem_alnreg_t *p = &regs->a[i];
+                printf("** %d, [%d,%d) <=> [%ld,%ld)\n", p->score, p->qb, p->qe, (long)p->rb, (long)p->re);
+            }
+        }
+        for (int i = 0; i < regs->n; ++i) {
+            mem_alnreg_t *p = &regs->a[i];
+            if (p->rid >= 0 && bns->anns[p->rid].is_alt)
+                p->is_alt = 1;
+        }
+        w->regs[i] = *regs;
+    }
+    
+    //finalize
+    for(int j=0; j<batch; j++)
+    {
+        mem_chain_v chn = local_chn[j];
+        for (int i = 0; i < chn.n; ++i) {
+            free(chn.a[i].seeds);
+        }
+        free(chn.a);
+    }
+    free(local_chn);
+    free(local_regs);
+ //   free(batch_swfwd);
+ //   free(batch_swseq);
+    free(global_chn_id);
+    free(global_chain_t);
+    free(global_rseq);
+    free(global_seqlen);
+    free(global_seq);
+    free(g_rmaxs);
+    free(global_srt);
+    free(seeds_idx);
+    free(sw_nxt_process.a);
+   // free(seeds_end);
 }
 
 
