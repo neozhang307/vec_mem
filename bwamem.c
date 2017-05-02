@@ -2576,13 +2576,18 @@ void chainging_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns
 
 typedef struct
 {
-    int64_t rmax[2];
+    int64_t *rmax;
     uint8_t *rseq;//should free in the future
     int chain_id;
     int seed_id;
-    mem_seed_t seed;
-}seed_extend_val;
-
+    mem_seed_t *seed;
+    const mem_chain_t*c;
+}ext_info;
+typedef struct
+{
+    size_t m,n;
+    ext_info* a;
+}ext_vec;
 
 void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, mem_alnreg_v *local_regvs)
 {
@@ -2603,6 +2608,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
      */
     int64_t** read_rmaxs = malloc(sizeof(int64_t*)*batch);
     uint8_t*** read_rseqs = malloc(sizeof(uint8_t**)*batch);
+    ext_vec* ext_task_q = malloc(sizeof(ext_vec)*batch);
+    
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
         int l_seq = seqs[batch_id].l_seq;
@@ -2613,6 +2620,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         int64_t* chnv_rmaxs = read_rmaxs[batch_id];
         uint8_t** chnv_rseqs = read_rseqs[batch_id];
         
+        int task_size = 0;
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {//chain inside read
             mem_chain_t *p = &chnv.a[chain_id];
             int l_query = l_seq;
@@ -2640,10 +2648,28 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             int rid;
             chnv_rseqs[chain_id] = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
             assert(c->rid == rid);
+            
+            task_size+=c->n;
         }
         
+        ext_task_q[batch_id].a = malloc(sizeof(ext_info)*task_size);
+        ext_task_q[batch_id].m = task_size;
+        ext_task_q[batch_id].n = task_size;
     }
     
+    for(int batch_id=0; batch_id<batch; batch_id++)//read
+    {
+        mem_chain_v chnv = local_chnvs[batch_id];
+        uint8_t** chnv_rseqs = read_rseqs[batch_id];
+        int task_id=0;
+        for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
+            const mem_chain_t*c =  &chnv.a[chain_id];
+            for(int i=0; i<c->n; i++)
+            {
+                ext_task_q[batch_id].a[task_id++].rseq=chnv_rseqs[chain_id];
+            }
+        }
+    }
     
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
@@ -2655,12 +2681,13 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         
         
         uint8_t** chnv_rseqs = read_rseqs[batch_id];
+        int task_id = 0;
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
         {
             const mem_chain_t*c =  &chnv.a[chain_id];
             if (c->n == 0) return;
             int64_t *rmax = read_rmaxs[batch_id]+2*chain_id;
-            uint8_t* rseq =  chnv_rseqs[chain_id];
+            
             
             
             
@@ -2692,6 +2719,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             for (k = c->n - 1; k >= 0; --k) {//seed inside chain
                 mem_alnreg_t *a;
                 s = &c->seeds[(uint32_t)srt[k]];
+                
+                uint8_t* rseq =  ext_task_q[batch_id].a[task_id++].rseq;//chnv_rseqs[chain_id];
                 
                 // NEO: this part is belong to CPU, should migrate this to the end of this function.
                 // NEO:
