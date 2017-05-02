@@ -2574,6 +2574,15 @@ void chainging_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns
     }
 }
 
+typedef struct
+{
+    int64_t rmax[2];
+    uint8_t *rseq;//should free in the future
+    int chain_id;
+    int seed_id;
+    mem_seed_t seed;
+}seed_extend_val;
+
 
 void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, mem_alnreg_v *local_regvs)
 {
@@ -2583,7 +2592,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         mem_alnreg_v* p_regs = local_regvs+i;
         kv_init(*p_regs);
     }
-    int64_t** read_rmaxs = malloc(sizeof(int64_t)*batch);
+    
     
     //init rmaxs (max possible span)
     /*
@@ -2592,12 +2601,18 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
      [0]: begin
      [1]: end
      */
+    int64_t** read_rmaxs = malloc(sizeof(int64_t*)*batch);
+    uint8_t*** read_rseqs = malloc(sizeof(uint8_t**)*batch);
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
         int l_seq = seqs[batch_id].l_seq;
         mem_chain_v chnv = local_chnvs[batch_id];
         read_rmaxs[batch_id] = malloc(sizeof(int64_t)*chnv.n*2);
+        read_rseqs[batch_id] = malloc(sizeof(uint8_t**)*chnv.n);
+        
         int64_t* chnv_rmaxs = read_rmaxs[batch_id];
+        uint8_t** chnv_rseqs = read_rseqs[batch_id];
+        
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {//chain inside read
             mem_chain_t *p = &chnv.a[chain_id];
             int l_query = l_seq;
@@ -2622,6 +2637,9 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
                 else rmax[0] = l_pac;
             }
+            int rid;
+            chnv_rseqs[chain_id] = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);
+            assert(c->rid == rid);
         }
         
     }
@@ -2635,19 +2653,18 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         mem_chain_v chnv = local_chnvs[batch_id];
         mem_alnreg_v* p_regs = local_regvs+batch_id;
         
-        int64_t* chnv_rmaxs = read_rmaxs[batch_id];
         
+        uint8_t** chnv_rseqs = read_rseqs[batch_id];
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {//chain inside read
             mem_chain_t *p = &chnv.a[chain_id];
-            if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", chain_id);
             {
                 const uint8_t * query = (uint8_t*)seq;
                 int l_query = l_seq;
                 const mem_chain_t*c = p;
                 mem_alnreg_v*av = p_regs;
+                int64_t *rmax = read_rmaxs[batch_id]+2*chain_id;
                 
-                int64_t *rmax = chnv_rmaxs+2*chain_id;
-                int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
+                int i, k, max_off[2], aw[2]; // aw: actual bandwidth used in extension
    //             int64_t l_pac = bns->l_pac,  tmp, max = 0;
                 int64_t tmp;
                 const mem_seed_t *s;
@@ -2656,13 +2673,14 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 
                 if (c->n == 0) return;
                 // retrieve the reference sequence
-                rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
-                assert(c->rid == rid);
+                rseq =  chnv_rseqs[chain_id];//bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
+//                assert(c->rid == rid);
                 
                 // NEO:
                 // external sorting
                 // Generate str: str is an index,   high 32 bit is SW score (sorted)
                 //                                  low 32 bit is real index
+                
                 srt = malloc(c->n * 8);
                 for (i = 0; i < c->n; ++i)
                     srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
@@ -2801,7 +2819,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     
                     a->frac_rep = c->frac_rep;
                 }
-                free(srt); free(rseq);
+                free(srt); //free(rseq);
             }
 
         }
@@ -2809,11 +2827,17 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     }
     
     //finalize rmaxs
-    for(int i=0; i<batch; i++)//read
+    for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
-        free(read_rmaxs[i]); 
+         mem_chain_v chnv = local_chnvs[batch_id];
+        free(read_rmaxs[batch_id]);
+        uint8_t** chnv_rseqs = read_rseqs[batch_id];
+        for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
+            free(chnv_rseqs[chain_id]);
+        }
+        free(chnv_rseqs);
     }
-    
+    free(read_rseqs);
     free(read_rmaxs);
 }
 
@@ -2870,6 +2894,7 @@ static void worker1_batch(void *data, int start, int batch, int tid)
     for(int i=start, j=0; j<batch; j++,i++)
     {
         mem_chain_v chn = local_chnvs[j];
+        
         for (int i = 0; i < chn.n; ++i) {
             free(chn.a[i].seeds);
         }
