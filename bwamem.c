@@ -2566,12 +2566,77 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
 static void worker1_batch(void *data, int start, int batch, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
-   
+    const mem_opt_t *opt = w->opt;
+    const bntseq_t *bns = w->bns;
+    const uint8_t *pac = w->pac;
+    const bwt_t *bwt = w->bwt;
+    
+    mem_chain_v *local_chnvs = malloc(sizeof(mem_chain_v)*batch);
+    size_t * local_chn_id = malloc(sizeof(size_t)*(batch+1));
+    local_chn_id[0]=0;
+    /*
+     NEO:
+     local chnvs saved chains for batch of reads. 
+        every chains have chains.n chain
+            every chain have chain.n seeds
+     
+     use local_chn_id to indicate the index of chain inside all chains.
+     */
+    local_chn_id[0]=0;
     for(int i=start, j=0; j<batch; j++,i++)
     {
-        w->regs[i] = mem_align1_core(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+        int l_seq = w->seqs[i].l_seq;
+        char *seq = w->seqs[i].seq;
+        mem_chain_v chn;
+        chn= mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
+        local_chnvs[j] =chn;
+        local_chn_id[j+1] = local_chn_id[j]+chn.n;
     }
     
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        int l_seq = w->seqs[i].l_seq;
+        char *seq = w->seqs[i].seq;
+        
+        mem_chain_v chn = local_chnvs[j];
+        //extend
+        mem_alnreg_v regs;
+        kv_init(regs);
+        for (int i = 0; i < chn.n; ++i) {
+            mem_chain_t *p = &chn.a[i];
+            if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
+            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
+         //   free(chn.a[i].seeds);
+        }
+     //   free(chn.a);
+        
+        //post process
+        regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
+        if (bwa_verbose >= 4) {
+            err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
+            for (int i = 0; i < regs.n; ++i) {
+                mem_alnreg_t *p = &regs.a[i];
+                printf("** %d, [%d,%d) <=> [%ld,%ld)\n", p->score, p->qb, p->qe, (long)p->rb, (long)p->re);
+            }
+        }
+        for (int i = 0; i < regs.n; ++i) {
+            mem_alnreg_t *p = &regs.a[i];
+            if (p->rid >= 0 && bns->anns[p->rid].is_alt)
+                p->is_alt = 1;
+        }
+        w->regs[i] = regs;
+    }
+    //finalize
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        mem_chain_v chn = local_chnvs[j];
+        for (int i = 0; i < chn.n; ++i) {
+            free(chn.a[i].seeds);
+        }
+        free(chn.a);
+    }
+    free(local_chnvs);
+    free(local_chn_id);
 
 }
 /*********************************************************/
