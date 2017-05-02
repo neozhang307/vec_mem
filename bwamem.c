@@ -2562,38 +2562,41 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
    // free(seeds_end);
 }
 
-void chainging_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, size_t * local_chn_id)
+void chainging_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs)
 {
-    local_chn_id[0]=0;
     for(int i=0; i<batch; i++)
     {
         int l_seq = seqs[i].l_seq;
         char *seq = seqs[i].seq;
-        mem_chain_v chn;
-        chn= mem_gen_chains(opt, bwt, bns, pac, l_seq, seq, aux);
-        local_chnvs[i] =chn;
-        local_chn_id[i+1] = local_chn_id[i]+chn.n;
+        mem_chain_v chnv;
+        chnv= mem_gen_chains(opt, bwt, bns, pac, l_seq, seq, aux);
+        local_chnvs[i] =chnv;
     }
 }
 
-void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, size_t * local_chn_id,  mem_alnreg_v *local_regvs)
+
+void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, mem_alnreg_v *local_regvs)
 {
-    
+
+    for(int i=0; i<batch; i++)
+    {
+        mem_alnreg_v* p_regs = local_regvs+i;
+        kv_init(*p_regs);
+    }
     for(int i=0; i<batch; i++)
     {
         int l_seq = seqs[i].l_seq;
         char *seq = seqs[i].seq;
         
-        mem_chain_v chn = local_chnvs[i];
-        //extend
+        mem_chain_v chnv = local_chnvs[i];
         mem_alnreg_v* p_regs = local_regvs+i;
-        kv_init(*p_regs);
-        for (int i = 0; i < chn.n; ++i) {
-            mem_chain_t *p = &chn.a[i];
+        for (int i = 0; i < chnv.n; ++i) {
+            mem_chain_t *p = &chnv.a[i];
             if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
             mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, p_regs);
         }
     }
+    
 }
 
 void post_extensiong_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, int batch,  mem_alnreg_v *local_regvs,  mem_alnreg_v *global_regvs)
@@ -2625,23 +2628,21 @@ static void worker1_batch(void *data, int start, int batch, int tid)
     
     mem_chain_v *local_chnvs = malloc(sizeof(mem_chain_v)*batch);
     mem_alnreg_v *local_regvs = malloc(sizeof(mem_alnreg_v)*batch);
-    size_t * local_chn_id = malloc(sizeof(size_t)*(batch+1));
-    local_chn_id[0]=0;
     /*
      NEO:
-     local chnvs saved chains for batch of reads. 
+     local_chnnvs saved chains for batch of reads.
+        every read has a chnv
         every chains have chains.n chain
             every chain have chain.n seeds
-     
-     use local_chn_id to indicate the index of chain inside all chains.
-     use local_chains to save all the chain to be extended.
+     local_regvs save aln result for batch of reads,
+        every read has a regv
      */
     
     //chaining
-    chainging_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs,  local_chn_id);
+    chainging_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs);
     
     //extension
-    seed_extension_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs,  local_chn_id, local_regvs);
+    seed_extension_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs, local_regvs);
     
     //post extension
     post_extensiong_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, batch, local_regvs, w->regs+start);
@@ -2658,8 +2659,6 @@ static void worker1_batch(void *data, int start, int batch, int tid)
     }
     free(local_chnvs);
     free(local_regvs);
-    free(local_chn_id);
-
 }
 /*********************************************************/
 /*********************************************************/
@@ -2717,6 +2716,10 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	}
 	kt_for(opt->n_threads, worker2, &w, (opt->flag&MEM_F_PE)? n>>1 : n); // generate alignment
  //   free(w.chn);
+//    for(int i=0; i<n; i++)
+//    {
+//        free(w.regs[i].a);
+//    }
     free(w.regs);
 	if (bwa_verbose >= 3)
 		fprintf(stderr, "[M::%s] Processed %d reads in %.3f CPU sec, %.3f real sec\n", __func__, n, cputime() - ctime, realtime() - rtime);
