@@ -2572,6 +2572,7 @@ static void worker1_batch(void *data, int start, int batch, int tid)
     const bwt_t *bwt = w->bwt;
     
     mem_chain_v *local_chnvs = malloc(sizeof(mem_chain_v)*batch);
+    mem_alnreg_v *local_regvs = malloc(sizeof(mem_alnreg_v)*batch);
     size_t * local_chn_id = malloc(sizeof(size_t)*(batch+1));
     local_chn_id[0]=0;
     /*
@@ -2581,6 +2582,7 @@ static void worker1_batch(void *data, int start, int batch, int tid)
             every chain have chain.n seeds
      
      use local_chn_id to indicate the index of chain inside all chains.
+     use local_chains to save all the chain to be extended.
      */
     local_chn_id[0]=0;
     for(int i=start, j=0; j<batch; j++,i++)
@@ -2593,6 +2595,8 @@ static void worker1_batch(void *data, int start, int batch, int tid)
         local_chn_id[j+1] = local_chn_id[j]+chn.n;
     }
     
+    
+    
     for(int i=start, j=0; j<batch; j++,i++)
     {
         int l_seq = w->seqs[i].l_seq;
@@ -2600,17 +2604,25 @@ static void worker1_batch(void *data, int start, int batch, int tid)
         
         mem_chain_v chn = local_chnvs[j];
         //extend
-        mem_alnreg_v regs;
-        kv_init(regs);
+        mem_alnreg_v* p_regs = local_regvs+j;
+        kv_init(*p_regs);
         for (int i = 0; i < chn.n; ++i) {
             mem_chain_t *p = &chn.a[i];
             if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
-            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, &regs);
+            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, p_regs);
          //   free(chn.a[i].seeds);
         }
      //   free(chn.a);
         
-        //post process
+        
+    }
+    
+    //post process
+    for(int i=start, j=0; j<batch; j++,i++)
+    {
+        int l_seq = w->seqs[i].l_seq;
+        char *seq = w->seqs[i].seq;
+        mem_alnreg_v regs = local_regvs[j];
         regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
         if (bwa_verbose >= 4) {
             err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
@@ -2626,6 +2638,8 @@ static void worker1_batch(void *data, int start, int batch, int tid)
         }
         w->regs[i] = regs;
     }
+    
+    
     //finalize
     for(int i=start, j=0; j<batch; j++,i++)
     {
@@ -2636,6 +2650,7 @@ static void worker1_batch(void *data, int start, int batch, int tid)
         free(chn.a);
     }
     free(local_chnvs);
+    free(local_regvs);
     free(local_chn_id);
 
 }
