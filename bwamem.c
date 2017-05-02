@@ -2666,7 +2666,15 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             const mem_chain_t*c =  &chnv.a[chain_id];
             for(int i=0; i<c->n; i++)
             {
-                ext_task_q[batch_id].a[task_id++].rseq=chnv_rseqs[chain_id];
+                ext_info * ext_tmp = &ext_task_q[batch_id].a[task_id++];
+                ext_tmp->c = &chnv.a[chain_id];
+                if (ext_tmp->c->n == 0) return;
+                ext_tmp->rseq = chnv_rseqs[chain_id];
+                ext_tmp->rmax = read_rmaxs[batch_id]+2*chain_id;
+                ext_tmp->chain_id = chain_id;
+                ext_tmp->seed_id = i;
+                
+               // ext_task_q[batch_id].a [task_id++].rmax=read_rmaxs[batch_id]+2*chain_id;
             }
         }
     }
@@ -2678,50 +2686,37 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         
         mem_chain_v chnv = local_chnvs[batch_id];
         mem_alnreg_v* p_regs = local_regvs+batch_id;
-        
-        
-        uint8_t** chnv_rseqs = read_rseqs[batch_id];
+
         int task_id = 0;
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
         {
             const mem_chain_t*c =  &chnv.a[chain_id];
             if (c->n == 0) return;
-            int64_t *rmax = read_rmaxs[batch_id]+2*chain_id;
-            
-            
-            
-            
-            const uint8_t * query = (uint8_t*)seq;
-            int l_query = l_seq;
-            
-            
-            mem_alnreg_v*av = p_regs;
-            
-            int i, k, max_off[2], aw[2]; // aw: actual bandwidth used in extension
-            int64_t tmp;
-            const mem_seed_t *s;
+ 
+            //sorting
             uint64_t *srt;
-            
-           
-            // retrieve the reference sequence
-            // NEO:
-            // external sorting
-            // Generate str: str is an index,   high 32 bit is SW score (sorted)
-            //                                  low 32 bit is real index
-            
             srt = malloc(c->n * 8);
-            for (i = 0; i < c->n; ++i)
+            for (int i = 0; i < c->n; ++i)
                 srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
             ks_introsort_64(c->n, srt);// NEO: srt in decending order
             
             
             // NEO: should do modification in this part in the future
-            for (k = c->n - 1; k >= 0; --k) {//seed inside chain
+            for (int k = c->n - 1; k >= 0; --k) {//seed inside chain
+                const uint8_t * query = (uint8_t*)seq;
+                int l_query = l_seq;
+                mem_alnreg_v*av = p_regs;
                 mem_alnreg_t *a;
+                const mem_seed_t *s;
                 s = &c->seeds[(uint32_t)srt[k]];
+                int i, max_off[2], aw[2]; // aw: actual bandwidth used in extension
+                int64_t tmp;
                 
-                uint8_t* rseq =  ext_task_q[batch_id].a[task_id++].rseq;//chnv_rseqs[chain_id];
+                ext_info * ext_tmp = &ext_task_q[batch_id].a[task_id++];
+                uint8_t* rseq =  ext_tmp->rseq;//chnv_rseqs[chain_id];
+                int64_t *rmax = ext_tmp->rmax;
                 
+                //int64_t *rmax = ext_task_q[batch_id].a[task_id++].rmax;
                 // NEO: this part is belong to CPU, should migrate this to the end of this function.
                 // NEO:
                 // should know how many seed would be drop in this place
