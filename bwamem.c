@@ -2583,58 +2583,78 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         mem_alnreg_v* p_regs = local_regvs+i;
         kv_init(*p_regs);
     }
-    for(int i=0; i<batch; i++)//read
+    int64_t** read_rmaxs = malloc(sizeof(int64_t)*batch);
+    
+    //init rmaxs (max possible span)
+    /*
+     NEO:
+     @para rmax[2] {thread private}:
+     [0]: begin
+     [1]: end
+     */
+    for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
-        int l_seq = seqs[i].l_seq;
-        char *seq = seqs[i].seq;
+        int l_seq = seqs[batch_id].l_seq;
+        mem_chain_v chnv = local_chnvs[batch_id];
+        read_rmaxs[batch_id] = malloc(sizeof(int64_t)*chnv.n*2);
+        int64_t* chnv_rmaxs = read_rmaxs[batch_id];
+        for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {//chain inside read
+            mem_chain_t *p = &chnv.a[chain_id];
+            int l_query = l_seq;
+            const mem_chain_t*c = p;
+            
+            int64_t *rmax = chnv_rmaxs+2*chain_id;
+            int i; // aw: actual bandwidth used in extension
+            int64_t l_pac = bns->l_pac, max = 0;
+            rmax[0] = l_pac<<1; rmax[1] = 0;
+            for (i = 0; i < c->n; ++i) {
+                int64_t b, e;
+                const mem_seed_t *t = &c->seeds[i];
+                b = t->rbeg - (t->qbeg + cal_max_gap(opt, t->qbeg));
+                e = t->rbeg + t->len + ((l_query - t->qbeg - t->len) + cal_max_gap(opt, l_query - t->qbeg - t->len));
+                rmax[0] = rmax[0] < b? rmax[0] : b;
+                rmax[1] = rmax[1] > e? rmax[1] : e;
+                if (t->len > max) max = t->len;
+            }
+            rmax[0] = rmax[0] > 0? rmax[0] : 0;
+            rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
+            if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
+                if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
+                else rmax[0] = l_pac;
+            }
+        }
         
-        mem_chain_v chnv = local_chnvs[i];
-        mem_alnreg_v* p_regs = local_regvs+i;
-        for (int i = 0; i < chnv.n; ++i) {//chain inside read
-            mem_chain_t *p = &chnv.a[i];
-            if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
-//            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, p_regs);
-           // void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac, int l_query, const uint8_t *query, const mem_chain_t *c, mem_alnreg_v *av)
+    }
+    
+    
+    for(int batch_id=0; batch_id<batch; batch_id++)//read
+    {
+        int l_seq = seqs[batch_id].l_seq;
+        char *seq = seqs[batch_id].seq;
+        
+        mem_chain_v chnv = local_chnvs[batch_id];
+        mem_alnreg_v* p_regs = local_regvs+batch_id;
+        
+        int64_t* chnv_rmaxs = read_rmaxs[batch_id];
+        
+        for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {//chain inside read
+            mem_chain_t *p = &chnv.a[chain_id];
+            if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", chain_id);
             {
                 const uint8_t * query = (uint8_t*)seq;
                 int l_query = l_seq;
                 const mem_chain_t*c = p;
                 mem_alnreg_v*av = p_regs;
                 
+                int64_t *rmax = chnv_rmaxs+2*chain_id;
                 int i, k, rid, max_off[2], aw[2]; // aw: actual bandwidth used in extension
-                int64_t l_pac = bns->l_pac, rmax[2], tmp, max = 0;
+   //             int64_t l_pac = bns->l_pac,  tmp, max = 0;
+                int64_t tmp;
                 const mem_seed_t *s;
                 uint8_t *rseq = 0;
                 uint64_t *srt;
                 
-                
-                /*
-                 NEO:
-                 @para rmax[2] {thread private}:
-                 [0]: begin
-                 [1]: end
-                 */
-                
                 if (c->n == 0) return;
-                // get the max possible span
-                // NEO: should set on CPU
-                // NEO: can we orgnize query by max possible span?
-                rmax[0] = l_pac<<1; rmax[1] = 0;
-                for (i = 0; i < c->n; ++i) {
-                    int64_t b, e;
-                    const mem_seed_t *t = &c->seeds[i];
-                    b = t->rbeg - (t->qbeg + cal_max_gap(opt, t->qbeg));
-                    e = t->rbeg + t->len + ((l_query - t->qbeg - t->len) + cal_max_gap(opt, l_query - t->qbeg - t->len));
-                    rmax[0] = rmax[0] < b? rmax[0] : b;
-                    rmax[1] = rmax[1] > e? rmax[1] : e;
-                    if (t->len > max) max = t->len;
-                }
-                rmax[0] = rmax[0] > 0? rmax[0] : 0;
-                rmax[1] = rmax[1] < l_pac<<1? rmax[1] : l_pac<<1;
-                if (rmax[0] < l_pac && l_pac < rmax[1]) { // crossing the forward-reverse boundary; then choose one side
-                    if (c->seeds[0].rbeg < l_pac) rmax[1] = l_pac; // this works because all seeds are guaranteed to be on the same strand
-                    else rmax[0] = l_pac;
-                }
                 // retrieve the reference sequence
                 rseq = bns_fetch_seq(bns, pac, &rmax[0], c->seeds[0].rbeg, &rmax[1], &rid);//NEO: potentially OOM, in every 10MB batch, average 67MB
                 assert(c->rid == rid);
@@ -2653,7 +2673,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 for (k = c->n - 1; k >= 0; --k) {//seed inside chain
                     mem_alnreg_t *a;
                     s = &c->seeds[(uint32_t)srt[k]];
-                    
                     
                     // NEO: this part is belong to CPU, should migrate this to the end of this function.
                     // NEO:
@@ -2692,7 +2711,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                             if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
                             if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
                         }
-                        
                         
                         if (i == c->n) { // no overlapping seeds; then skip extension
                             srt[k] = 0; // mark that seed extension has not been performed
@@ -2787,8 +2805,16 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             }
 
         }
+      //  free(chnv_rmaxs);
     }
     
+    //finalize rmaxs
+    for(int i=0; i<batch; i++)//read
+    {
+        free(read_rmaxs[i]); 
+    }
+    
+    free(read_rmaxs);
 }
 
 void post_extensiong_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, int batch,  mem_alnreg_v *local_regvs,  mem_alnreg_v *global_regvs)
