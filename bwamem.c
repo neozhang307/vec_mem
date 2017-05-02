@@ -2562,14 +2562,66 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
    // free(seeds_end);
 }
 
+void chainging_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, size_t * local_chn_id)
+{
+    local_chn_id[0]=0;
+    for(int i=0; i<batch; i++)
+    {
+        int l_seq = seqs[i].l_seq;
+        char *seq = seqs[i].seq;
+        mem_chain_v chn;
+        chn= mem_gen_chains(opt, bwt, bns, pac, l_seq, seq, aux);
+        local_chnvs[i] =chn;
+        local_chn_id[i+1] = local_chn_id[i]+chn.n;
+    }
+}
+
+void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, size_t * local_chn_id,  mem_alnreg_v *local_regvs)
+{
+    
+    for(int i=0; i<batch; i++)
+    {
+        int l_seq = seqs[i].l_seq;
+        char *seq = seqs[i].seq;
+        
+        mem_chain_v chn = local_chnvs[i];
+        //extend
+        mem_alnreg_v* p_regs = local_regvs+i;
+        kv_init(*p_regs);
+        for (int i = 0; i < chn.n; ++i) {
+            mem_chain_t *p = &chn.a[i];
+            if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
+            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, p_regs);
+        }
+    }
+}
+
+void post_extensiong_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, int batch,  mem_alnreg_v *local_regvs,  mem_alnreg_v *global_regvs)
+{
+    for(int i=0; i<batch; i++)
+    {
+        char *seq = seqs[i].seq;
+        mem_alnreg_v regs = local_regvs[i];
+        regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
+        if (bwa_verbose >= 4) {
+            err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
+            for (int i = 0; i < regs.n; ++i) {
+                mem_alnreg_t *p = &regs.a[i];
+                printf("** %d, [%d,%d) <=> [%ld,%ld)\n", p->score, p->qb, p->qe, (long)p->rb, (long)p->re);
+            }
+        }
+        for (int i = 0; i < regs.n; ++i) {
+            mem_alnreg_t *p = &regs.a[i];
+            if (p->rid >= 0 && bns->anns[p->rid].is_alt)
+                p->is_alt = 1;
+        }
+        global_regvs[i] = regs;
+    }
+}
 
 static void worker1_batch(void *data, int start, int batch, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
-    const mem_opt_t *opt = w->opt;
-    const bntseq_t *bns = w->bns;
-    const uint8_t *pac = w->pac;
-    const bwt_t *bwt = w->bwt;
     
     mem_chain_v *local_chnvs = malloc(sizeof(mem_chain_v)*batch);
     mem_alnreg_v *local_regvs = malloc(sizeof(mem_alnreg_v)*batch);
@@ -2584,60 +2636,15 @@ static void worker1_batch(void *data, int start, int batch, int tid)
      use local_chn_id to indicate the index of chain inside all chains.
      use local_chains to save all the chain to be extended.
      */
-    local_chn_id[0]=0;
-    for(int i=start, j=0; j<batch; j++,i++)
-    {
-        int l_seq = w->seqs[i].l_seq;
-        char *seq = w->seqs[i].seq;
-        mem_chain_v chn;
-        chn= mem_gen_chains(w->opt, w->bwt, w->bns, w->pac, w->seqs[i].l_seq, w->seqs[i].seq, w->aux[tid]);
-        local_chnvs[j] =chn;
-        local_chn_id[j+1] = local_chn_id[j]+chn.n;
-    }
     
+    //chaining
+    chainging_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs,  local_chn_id);
     
+    //extension
+    seed_extension_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs,  local_chn_id, local_regvs);
     
-    for(int i=start, j=0; j<batch; j++,i++)
-    {
-        int l_seq = w->seqs[i].l_seq;
-        char *seq = w->seqs[i].seq;
-        
-        mem_chain_v chn = local_chnvs[j];
-        //extend
-        mem_alnreg_v* p_regs = local_regvs+j;
-        kv_init(*p_regs);
-        for (int i = 0; i < chn.n; ++i) {
-            mem_chain_t *p = &chn.a[i];
-            if (bwa_verbose >= 4) err_printf("* ---> Processing chain(%d) <---\n", i);
-            mem_chain2aln(opt, bns, pac, l_seq, (uint8_t*)seq, p, p_regs);
-         //   free(chn.a[i].seeds);
-        }
-     //   free(chn.a);
-        
-        
-    }
-    
-    //post process
-    for(int i=start, j=0; j<batch; j++,i++)
-    {
-        int l_seq = w->seqs[i].l_seq;
-        char *seq = w->seqs[i].seq;
-        mem_alnreg_v regs = local_regvs[j];
-        regs.n = mem_sort_dedup_patch(opt, bns, pac, (uint8_t*)seq, regs.n, regs.a);
-        if (bwa_verbose >= 4) {
-            err_printf("* %ld chains remain after removing duplicated chains\n", regs.n);
-            for (int i = 0; i < regs.n; ++i) {
-                mem_alnreg_t *p = &regs.a[i];
-                printf("** %d, [%d,%d) <=> [%ld,%ld)\n", p->score, p->qb, p->qe, (long)p->rb, (long)p->re);
-            }
-        }
-        for (int i = 0; i < regs.n; ++i) {
-            mem_alnreg_t *p = &regs.a[i];
-            if (p->rid >= 0 && bns->anns[p->rid].is_alt)
-                p->is_alt = 1;
-        }
-        w->regs[i] = regs;
-    }
+    //post extension
+    post_extensiong_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, batch, local_regvs, w->regs+start);
     
     
     //finalize
