@@ -2667,54 +2667,64 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             for(int i=0; i<c->n; i++)
             {
                 ext_info * ext_tmp = &ext_task_q[batch_id].a[task_id++];
-                ext_tmp->c = &chnv.a[chain_id];
+                ext_tmp->c = c;
                 if (ext_tmp->c->n == 0) return;
                 ext_tmp->rseq = chnv_rseqs[chain_id];
                 ext_tmp->rmax = read_rmaxs[batch_id]+2*chain_id;
                 ext_tmp->chain_id = chain_id;
                 ext_tmp->seed_id = i;
-                
+                ext_tmp->seed = &c->seeds[i];
                // ext_task_q[batch_id].a [task_id++].rmax=read_rmaxs[batch_id]+2*chain_id;
             }
         }
     }
-    
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
         int l_seq = seqs[batch_id].l_seq;
         char *seq = seqs[batch_id].seq;
         
-        mem_chain_v chnv = local_chnvs[batch_id];
         mem_alnreg_v* p_regs = local_regvs+batch_id;
-
-        int task_id = 0;
-        for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
+        ext_vec* ext_task = ext_task_q+batch_id;
+        
+        uint64_t* sidx = malloc(sizeof(uint64_t)*ext_task->n);
+        for(int i=0; i<ext_task->n;i++)
         {
-            const mem_chain_t*c =  &chnv.a[chain_id];
-            if (c->n == 0) return;
- 
-            //sorting
-            uint64_t *srt;
-            srt = malloc(c->n * 8);
-            for (int i = 0; i < c->n; ++i)
-                srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
-            ks_introsort_64(c->n, srt);// NEO: srt in decending order
-            
-            
-            // NEO: should do modification in this part in the future
-            for (int k = c->n - 1; k >= 0; --k) {//seed inside chain
+            sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
+        }
+        ks_introsort_64(ext_task->n, sidx);
+        for(int k=ext_task->n-1;k>=0;--k)
+        {
+//        for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
+//        {
+//            const mem_chain_t*c =  &chnv.a[chain_id];
+//            if (c->n == 0) return;
+// 
+//            //sorting
+//            uint64_t *srt;
+//            srt = malloc(c->n * 8);
+//            for (int i = 0; i < c->n; ++i)
+//                srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
+//            ks_introsort_64(c->n, srt);// NEO: srt in decending order
+//            
+//            
+//            // NEO: should do modification in this part in the future
+//            for (int k = c->n - 1; k >= 0; --k) {//seed inside chain
+            ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
+            uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
+            int64_t *rmax = cur_ext->rmax;
+            const mem_chain_t*c = cur_ext->c;
                 const uint8_t * query = (uint8_t*)seq;
                 int l_query = l_seq;
                 mem_alnreg_v*av = p_regs;
                 mem_alnreg_t *a;
                 const mem_seed_t *s;
-                s = &c->seeds[(uint32_t)srt[k]];
+//                s = &c->seeds[(uint32_t)srt[k]];
+                s = ext_task->a[(uint32_t)sidx[k]].seed;//&c->seeds[(uint32_t)srt[k]];
+            
                 int i, max_off[2], aw[2]; // aw: actual bandwidth used in extension
                 int64_t tmp;
                 
-                ext_info * ext_tmp = &ext_task_q[batch_id].a[task_id++];
-                uint8_t* rseq =  ext_tmp->rseq;//chnv_rseqs[chain_id];
-                int64_t *rmax = ext_tmp->rmax;
+
                 
                 //int64_t *rmax = ext_task_q[batch_id].a[task_id++].rmax;
                 // NEO: this part is belong to CPU, should migrate this to the end of this function.
@@ -2746,17 +2756,19 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                                k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
                     
                     //NEO: block structure
-                    for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
+                    for (i = k + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
+                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
+                        if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                         const mem_seed_t *t;
-                        if (srt[i] == 0) continue;
-                        t = &c->seeds[(uint32_t)srt[i]];
+                        if (sidx[i] == 0) continue;
+                        t =  ext_task->a[(uint32_t)sidx[i]].seed;;//&c->seeds[(uint32_t)srt[i]];
                         if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
                         if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
                         if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
                     }
                     
-                    if (i == c->n) { // no overlapping seeds; then skip extension
-                        srt[k] = 0; // mark that seed extension has not been performed
+                    if (i == ext_task->n) { // no overlapping seeds; then skip extension
+                        sidx[k] = 0; // mark that seed extension has not been performed
                         continue;
                     }
                     if (bwa_verbose >= 4)
@@ -2801,7 +2813,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     }
                     free(qs); free(rs);
                 } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
-                
                 if (s->qbeg + s->len != l_query) { // right extension
                     int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
                     qe = s->qbeg + s->len;
@@ -2832,7 +2843,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     }
                 } else a->qe = l_query, a->re = s->rbeg + s->len;
                 if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
-                
                 // compute seedcov
                 for (i = 0, a->seedcov = 0; i < c->n; ++i) {
                     const mem_seed_t *t = &c->seeds[i];
@@ -2843,12 +2853,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 a->seedlen0 = s->len;
                 
                 a->frac_rep = c->frac_rep;
-            }
-            free(srt); //free(rseq);
         }
-
-        
-      //  free(chnv_rmaxs);
+        free(sidx);
     }
     
     //finalize rmaxs
