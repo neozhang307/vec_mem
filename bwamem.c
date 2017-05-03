@@ -2681,6 +2681,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     
     uint64_t** sidxes = malloc(sizeof(uint64_t*)*batch);
     int * task_id = malloc(sizeof(int)*batch);
+
     
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
@@ -2694,9 +2695,11 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         ks_introsort_64(ext_task->n, sidxes[batch_id]);
     }
     
+    
+
+    
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
-
         for(;task_id[batch_id]>=0;task_id[batch_id]--)
         {
             int l_seq = seqs[batch_id].l_seq;
@@ -2704,22 +2707,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             mem_alnreg_v* p_regs = local_regvs+batch_id;
             ext_vec* ext_task = ext_task_q+batch_id;
             uint64_t *sidx=sidxes[batch_id];
-//        for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
-//        {
-//            const mem_chain_t*c =  &chnv.a[chain_id];
-//            if (c->n == 0) return;
-// 
-//            //sorting
-//            uint64_t *srt;
-//            srt = malloc(c->n * 8);
-//            for (int i = 0; i < c->n; ++i)
-//                srt[i] = (uint64_t)c->seeds[i].score<<32 | i;
-//            ks_introsort_64(c->n, srt);// NEO: srt in decending order
-//            
-//            
-//            // NEO: should do modification in this part in the future
-//            for (int k = c->n - 1; k >= 0; --k) {//seed inside chain
-           
             ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[task_id[batch_id]]];
             uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
             int64_t *rmax = cur_ext->rmax;
@@ -2729,18 +2716,11 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 mem_alnreg_v*av = p_regs;
                 mem_alnreg_t *a;
                 const mem_seed_t *s;
-//                s = &c->seeds[(uint32_t)srt[k]];
                 s = cur_ext->seed;//&c->seeds[(uint32_t)srt[k]];
             
                 int i, max_off[2], aw[2]; // aw: actual bandwidth used in extension
                 int64_t tmp;
-                
-
-                
-                //int64_t *rmax = ext_task_q[batch_id].a[task_id++].rmax;
-                // NEO: this part is belong to CPU, should migrate this to the end of this function.
-                // NEO:
-                // should know how many seed would be drop in this place
+            
                 // Test if the seed is in future align
                 for (i = 0; i < av->n; ++i) { // test whether extension has been made before
                     mem_alnreg_t *p = &av->a[i];
@@ -2877,7 +2857,10 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         }
         free(chnv_rseqs);
         free(sidxes[batch_id]);
+        free(ext_task_q[batch_id].a);
     }
+    free(ext_task_q);
+//    free(sw_nxt_process.a);
     free(sidxes);
     free(read_rseqs);
     free(read_rmaxs);
