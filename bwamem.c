@@ -2678,22 +2678,32 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             }
         }
     }
+    
+    uint64_t** sidxes = malloc(sizeof(uint64_t*)*batch);
+    int * task_id = malloc(sizeof(int)*batch);
+    
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
-        int l_seq = seqs[batch_id].l_seq;
-        char *seq = seqs[batch_id].seq;
-        
-        mem_alnreg_v* p_regs = local_regvs+batch_id;
         ext_vec* ext_task = ext_task_q+batch_id;
-        
-        uint64_t* sidx = malloc(sizeof(uint64_t)*ext_task->n);
+        task_id[batch_id] = ext_task->n-1;
+        sidxes[batch_id]=malloc(sizeof(uint64_t)*ext_task->n);
         for(int i=0; i<ext_task->n;i++)
         {
-            sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
+            sidxes[batch_id][i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
         }
-        ks_introsort_64(ext_task->n, sidx);
-        for(int k=ext_task->n-1;k>=0;--k)
+        ks_introsort_64(ext_task->n, sidxes[batch_id]);
+    }
+    
+    for(int batch_id=0; batch_id<batch; batch_id++)//read
+    {
+
+        for(;task_id[batch_id]>=0;task_id[batch_id]--)
         {
+            int l_seq = seqs[batch_id].l_seq;
+            char *seq = seqs[batch_id].seq;
+            mem_alnreg_v* p_regs = local_regvs+batch_id;
+            ext_vec* ext_task = ext_task_q+batch_id;
+            uint64_t *sidx=sidxes[batch_id];
 //        for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
 //        {
 //            const mem_chain_t*c =  &chnv.a[chain_id];
@@ -2709,7 +2719,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
 //            
 //            // NEO: should do modification in this part in the future
 //            for (int k = c->n - 1; k >= 0; --k) {//seed inside chain
-            ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
+           
+            ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[task_id[batch_id]]];
             uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
             int64_t *rmax = cur_ext->rmax;
             const mem_chain_t*c = cur_ext->c;
@@ -2719,7 +2730,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 mem_alnreg_t *a;
                 const mem_seed_t *s;
 //                s = &c->seeds[(uint32_t)srt[k]];
-                s = ext_task->a[(uint32_t)sidx[k]].seed;//&c->seeds[(uint32_t)srt[k]];
+                s = cur_ext->seed;//&c->seeds[(uint32_t)srt[k]];
             
                 int i, max_off[2], aw[2]; // aw: actual bandwidth used in extension
                 int64_t tmp;
@@ -2753,10 +2764,10 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
                     if (bwa_verbose >= 4)
                         printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
-                               k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+                               task_id[batch_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
                     
                     //NEO: block structure
-                    for (i = k + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
+                    for (i = task_id[batch_id] + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
                         ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
                         if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                         const mem_seed_t *t;
@@ -2768,11 +2779,11 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     }
                     
                     if (i == ext_task->n) { // no overlapping seeds; then skip extension
-                        sidx[k] = 0; // mark that seed extension has not been performed
+                        sidx[task_id[batch_id]] = 0; // mark that seed extension has not been performed
                         continue;
                     }
                     if (bwa_verbose >= 4)
-                        printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+                        printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", task_id[batch_id]);
                 }
                 
                 a = kv_pushp(mem_alnreg_t, *av);
@@ -2781,7 +2792,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 a->score = a->truesc = -1;
                 a->rid = c->rid;
                 
-                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
+                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", task_id[batch_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
                 if (s->qbeg) { // left extension
                     uint8_t *rs, *qs;
                     int qle, tle, gtle, gscore;
@@ -2854,9 +2865,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 
                 a->frac_rep = c->frac_rep;
         }
-        free(sidx);
     }
-    
     //finalize rmaxs
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
@@ -2867,9 +2876,12 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             free(chnv_rseqs[chain_id]);
         }
         free(chnv_rseqs);
+        free(sidxes[batch_id]);
     }
+    free(sidxes);
     free(read_rseqs);
     free(read_rmaxs);
+    free(task_id);
 }
 
 void post_extensiong_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, int batch,  mem_alnreg_v *local_regvs,  mem_alnreg_v *global_regvs)
