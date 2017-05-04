@@ -2701,6 +2701,9 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         process_seedid[batch_id] = ext_task->n-1;
     }
     
+    ext_vec nxt_process_ext;
+    kv_init(nxt_process_ext);
+    
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
 //        int l_seq = seqs[batch_id].l_seq;
@@ -2772,11 +2775,15 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                         printf("RESCURE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                     fprintf(stderr,"rescured\n");
                 }
+                
+                kv_push(ext_info,nxt_process_ext,*cur_ext);
             }
             
+            for(int process_id=0; process_id<nxt_process_ext.n; process_id++)
             {
-                int k = process_seedid[batch_id];
-                ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
+                ext_info* cur_ext = &nxt_process_ext.a[process_id];
+               // int k = process_seedid[batch_id];
+                //ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
                 uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
                 int64_t *rmax = cur_ext->rmax;
                 const mem_chain_t*c = cur_ext->c;
@@ -2795,7 +2802,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 
                 int64_t tmp;
                 
-                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", k, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
+                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", cur_ext->seed_id, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
                 if (s->qbeg) { // left extension
                     uint8_t *rs, *qs;
                     int qle, tle, gtle, gscore;
@@ -2870,6 +2877,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 a->seedlen0 = s->len;
                 
                 a->frac_rep = c->frac_rep;
+            nxt_process_ext.n=0;
             }
         }
 
