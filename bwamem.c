@@ -2748,11 +2748,15 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     w = max_gap < p->w? max_gap : p->w;
                     if (qd - rd < w && rd - qd < w) break;
                 }
+                if (bwa_verbose >= 4)
+                {
+                    printf("prepare for rescure i:/n:%d:\%d/n",i,av->n);
+                }
                 // NEO:
                 // rescue the seed marked as overlap, if it would lead to a different result
                 if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
                     if (bwa_verbose >= 4)
-                        printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
+                        printf("DROP_MARK** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
                                k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
                     
                     //NEO: block structure
@@ -2772,7 +2776,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                         continue;
                     }
                     if (bwa_verbose >= 4)
-                        printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+                        printf("RESCURE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                 }
                 
                 a = kv_pushp(mem_alnreg_t, *av);
