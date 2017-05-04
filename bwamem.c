@@ -2687,6 +2687,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     }
     
     uint64_t** sidxes = malloc(sizeof(uint64_t*)*batch);
+    int* process_seedid = malloc(sizeof(int)*batch);
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
         ext_vec* ext_task = ext_task_q+batch_id;
@@ -2697,6 +2698,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         }
         ks_introsort_64(ext_task->n, sidx);
         sidxes[batch_id]=sidx;
+        process_seedid[batch_id] = ext_task->n-1;
     }
     
     for(int batch_id=0; batch_id<batch; batch_id++)//read
@@ -2706,16 +2708,12 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         
 //        mem_alnreg_v* p_regs = local_regvs+batch_id;
         ext_vec* ext_task = ext_task_q+batch_id;
-        
-        uint64_t* sidx = sidxes[batch_id];//malloc(sizeof(uint64_t)*ext_task->n);
-//        for(int i=0; i<ext_task->n;i++)
-//        {
-//            sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
-//        }
-//        ks_introsort_64(ext_task->n, sidx);
-        for(int k=ext_task->n-1;k>=0;--k)
+        uint64_t* sidx = sidxes[batch_id];
+//        for(int k=ext_task->n-1;k>=0;--k)
+        for(;process_seedid[batch_id]>=0; --process_seedid[batch_id])
         {
             {
+                int k = process_seedid[batch_id];
                 ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
 //                uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
 //                int64_t *rmax = cur_ext->rmax;
@@ -2773,11 +2771,11 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     if (bwa_verbose >= 4)
                         printf("RESCURE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                     fprintf(stderr,"rescured\n");
-                    
                 }
             }
             
             {
+                int k = process_seedid[batch_id];
                 ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
                 uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
                 int64_t *rmax = cur_ext->rmax;
