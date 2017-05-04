@@ -2709,7 +2709,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     
     pext_vec nxt_process_pext;
     kv_init(nxt_process_pext);
-    
+    while(1)
+    {
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
         ext_vec* ext_task = ext_task_q+batch_id;
@@ -2769,9 +2770,11 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 }
                 
                 kv_push(ext_info*,nxt_process_pext,cur_ext);
-                
+                break;
             }
-            
+        }
+    }
+        if(nxt_process_pext.n==0)break;
             for(int process_id=0; process_id<nxt_process_pext.n; process_id++)
             {
                 ext_info* cur_ext = nxt_process_pext.a[process_id];//&nxt_process_ext.a[process_id];
@@ -2872,7 +2875,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             
             }
             nxt_process_pext.n=0;
-        }
     }
     
     //finalize rmaxs
