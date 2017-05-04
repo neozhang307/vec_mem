@@ -2747,9 +2747,11 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                                task_id[batch_id], (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
                     
                     //NEO: block structure
+                    int is1st = 1;
                     for (i = task_id[batch_id] + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
-//                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
-  //                      if(cur_ext->chain_id!=pre_ext->chain_id)continue;
+                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
+                        if(cur_ext->chain_id!=pre_ext->chain_id)continue;
+                        is1st = 0;
                         const mem_seed_t *t;
                         if (sidx[i] == 0) continue;
                         t =  ext_task->a[(uint32_t)sidx[i]].seed;;//&c->seeds[(uint32_t)srt[i]];
@@ -2757,8 +2759,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                         if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
                         if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
                     }
-                    
-                    if (i == ext_task->n) { // no overlapping seeds; then skip extension
+                    //the fist one in a chain should be extended in any case
+                    if (!is1st && i == ext_task->n) { // no overlapping seeds; then skip extension
                         sidx[task_id[batch_id]] = 0; // mark that seed extension has not been performed
                         continue;
                     }
