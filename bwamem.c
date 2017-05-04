@@ -2593,6 +2593,12 @@ typedef struct
     ext_info* a;
 }ext_vec;
 
+typedef struct
+{
+    size_t m,n;
+    ext_info** a;
+}pext_vec;
+
 void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, mem_alnreg_v *local_regvs)
 {
 
@@ -2701,8 +2707,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         process_seedid[batch_id] = ext_task->n-1;
     }
     
-    ext_vec nxt_process_ext;
-    kv_init(nxt_process_ext);
+    pext_vec nxt_process_pext;
+    kv_init(nxt_process_pext);
     
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
@@ -2776,12 +2782,12 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     fprintf(stderr,"rescured\n");
                 }
                 
-                kv_push(ext_info,nxt_process_ext,*cur_ext);
+                kv_push(ext_info*,nxt_process_pext,cur_ext);
             }
             
-            for(int process_id=0; process_id<nxt_process_ext.n; process_id++)
+            for(int process_id=0; process_id<nxt_process_pext.n; process_id++)
             {
-                ext_info* cur_ext = &nxt_process_ext.a[process_id];
+                ext_info* cur_ext = nxt_process_pext.a[process_id];//&nxt_process_ext.a[process_id];
                // int k = process_seedid[batch_id];
                 //ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
                 uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
@@ -2877,8 +2883,10 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 a->seedlen0 = s->len;
                 
                 a->frac_rep = c->frac_rep;
-            nxt_process_ext.n=0;
+            
             }
+            nxt_process_pext.n=0;
+            
         }
 
     }
@@ -2894,7 +2902,10 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         }
         free(chnv_rseqs);
         free(sidxes[batch_id]);
+        free(ext_task_q[batch_id].a);
     }
+    free(ext_task_q);
+    free(nxt_process_pext.a);
     free(sidxes);
     free(read_rseqs);
     free(read_rmaxs);
