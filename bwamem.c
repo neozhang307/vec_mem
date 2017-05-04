@@ -2748,8 +2748,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     
                     //NEO: block structure
                     for (i = task_id[batch_id] + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
-                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
-                        if(cur_ext->chain_id!=pre_ext->chain_id)continue;
+//                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
+  //                      if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                         const mem_seed_t *t;
                         if (sidx[i] == 0) continue;
                         t =  ext_task->a[(uint32_t)sidx[i]].seed;;//&c->seeds[(uint32_t)srt[i]];
