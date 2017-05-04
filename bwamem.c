@@ -2712,22 +2712,13 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
-//        int l_seq = seqs[batch_id].l_seq;
-//        char *seq = seqs[batch_id].seq;
-        
-//        mem_alnreg_v* p_regs = local_regvs+batch_id;
         ext_vec* ext_task = ext_task_q+batch_id;
         uint64_t* sidx = sidxes[batch_id];
-//        for(int k=ext_task->n-1;k>=0;--k)
         for(;process_seedid[batch_id]>=0; --process_seedid[batch_id])
         {
             {
                 int k = process_seedid[batch_id];
                 ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
-//                uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
-//                int64_t *rmax = cur_ext->rmax;
-//                const mem_chain_t*c = cur_ext->c;
-//                const uint8_t * query = cur_ext->query;//(uint8_t*)seq;
                 int l_query = cur_ext->l_query;//l_seq;
                 const mem_seed_t *s = cur_ext->seed;//ext_task->a[(uint32_t)sidx[k]].seed;
                 mem_alnreg_v * av = cur_ext->av;
@@ -2749,10 +2740,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     max_gap = cal_max_gap(opt, qd < rd? qd : rd);
                     w = max_gap < p->w? max_gap : p->w;
                     if (qd - rd < w && rd - qd < w) break;
-                }
-                if (av->n>0)
-                {
-                    fprintf(stderr,"prepare for rescure i/n:%d/%ld\n",i,av->n);
                 }
                 // NEO:
                 // rescue the seed marked as overlap, if it would lead to a different result
@@ -2779,10 +2766,10 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     }
                     if (bwa_verbose >= 4)
                         printf("RESCURE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
-                    fprintf(stderr,"rescured\n");
                 }
                 
                 kv_push(ext_info*,nxt_process_pext,cur_ext);
+                
             }
             
             for(int process_id=0; process_id<nxt_process_pext.n; process_id++)
@@ -2804,8 +2791,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 a->w = aw[0] = aw[1] = opt->w;
                 a->score = a->truesc = -1;
                 a->rid = c->rid;
-                
-                
+    
                 int64_t tmp;
                 
                 if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", cur_ext->seed_id, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[c->rid].name);
@@ -2886,9 +2872,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             
             }
             nxt_process_pext.n=0;
-            
         }
-
     }
     
     //finalize rmaxs
