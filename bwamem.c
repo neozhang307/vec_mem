@@ -2704,7 +2704,7 @@ void seed_extension_scalar_batch(const mem_opt_t *opt, pext_vec *nxt_process_pex
     }
 }
 
-void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
+void seed_extension_mid_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
 {
     int process_size = nxt_process_pext->n;
     //swseq: interval value of SW operation
@@ -2831,7 +2831,7 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
             }
         }
     }
-    
+    //post process
     for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
     {
         ext_info* cur_ext = nxt_process_pext->a[process_id];
@@ -2874,6 +2874,193 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         
         swrst_t* cur_srt_r = &b_sw_vals_right[process_id];
 //        swseq_t* cur_seq_r = cur_srt_r->sw_seq;
+        if (s->qbeg + s->len != l_query) { // right extension
+            //NEO: warp or block
+            int qle, tle, gtle, gscore, sc0 = cur_srt_r->h0;
+            qle = cur_srt_r->qle;
+            tle = cur_srt_r->tle;
+            gtle = cur_srt_r->gtle;
+            gscore = cur_srt_r->gscore;
+            int qe,re;
+            qe = s->qbeg + s->len;
+            re = s->rbeg + s->len - rmax[0];
+            assert(re >= 0);
+            aw[1] = cur_srt_r->w;
+            a->score= cur_srt_r->score;
+            // similar to the above
+            if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
+                a->qe = qe + qle, a->re = rmax[0] + re + tle;
+                a->truesc += a->score - sc0;
+            } else { // to-end extension
+                a->qe = l_query, a->re = rmax[0] + re + gtle;
+                a->truesc += gscore - sc0;
+            }
+        } else a->qe = l_query, a->re = s->rbeg + s->len;
+        
+        if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
+        // compute seedcov
+        {
+            int i;
+            for (i = 0, a->seedcov = 0; i < c->n; ++i) {
+                const mem_seed_t *t = &c->seeds[i];
+                if (t->qbeg >= a->qb && t->qbeg + t->len <= a->qe && t->rbeg >= a->rb && t->rbeg + t->len <= a->re) // seed fully contained
+                    a->seedcov += t->len; // this is not very accurate, but for approx. mapQ, this is good enough
+            }
+        }
+        a->w = aw[0] > aw[1]? aw[0] : aw[1];
+        a->seedlen0 = s->len;
+        a->frac_rep = c->frac_rep;
+        
+    }
+    
+    free(b_sw_seq_left);
+    free(b_sw_vals_left);
+    free(b_sw_seq_right);
+    free(b_sw_vals_right);
+}
+
+void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
+{
+    int process_size = nxt_process_pext->n;
+    //swseq: interval value of SW operation
+    //seq: sequence value
+    swseq_t* b_sw_seq_left = malloc(sizeof(swseq_t)*process_size);
+    swrst_t* b_sw_vals_left = malloc(sizeof(swrst_t)*process_size);
+    swseq_t* b_sw_seq_right = malloc(sizeof(swseq_t)*process_size);
+    swrst_t* b_sw_vals_right = malloc(sizeof(swrst_t)*process_size);
+    memset(b_sw_seq_left, 0, process_size);
+    memset(b_sw_seq_right, 0, process_size);
+    
+    //init sw related values
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        swseq_t* cur_seq;
+        swrst_t* cur_srt;
+        cur_seq = &b_sw_seq_right[process_id];
+        cur_srt = &b_sw_vals_right[process_id];
+        cur_srt->sw_seq=cur_seq;
+        cur_seq = &b_sw_seq_left[process_id];
+        cur_srt = &b_sw_vals_left[process_id];
+        cur_srt->sw_seq=cur_seq;
+    }
+    //left extension init
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        ext_info* cur_ext = nxt_process_pext->a[process_id];
+        swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
+        swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+        
+        const uint8_t * query = cur_ext->query;
+        uint8_t* rseq =  cur_ext->rseq;
+        int64_t *rmax = cur_ext->rmax;
+        const mem_seed_t *s = cur_ext->seed;
+        if(s->qbeg)
+        {
+            int64_t tmp;
+            uint8_t *rs, *qs;
+            qs = malloc(s->qbeg);
+            for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
+            tmp = s->rbeg - rmax[0];
+            rs = malloc(tmp);
+            for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
+            cur_seq_l->qlen = s->qbeg;
+            cur_seq_l->query = qs;
+            cur_seq_l->rlen = tmp;
+            cur_seq_l->ref = rs;
+            cur_srt_l->h0 = s->len * opt->a;
+            cur_srt_l->score = -1;
+        }
+        else
+        {
+            cur_seq_l->qlen=0;
+            cur_seq_l->rlen=0;
+            cur_srt_l->score = s->len * opt->a;
+        }
+    }
+    
+    //left extension main process
+    ksw_extend_batchw2(b_sw_vals_left, nxt_process_pext->n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip5, opt->zdrop);
+    
+    //init right extension
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        ext_info* cur_ext = nxt_process_pext->a[process_id];
+        mem_seed_t* s = cur_ext->seed;
+        const uint8_t *query = cur_ext->query;
+        uint8_t *rseq = cur_ext->rseq;
+        int l_query = cur_ext->l_query;
+        int64_t* rmax = cur_ext->rmax;
+        
+        
+        swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
+        //        swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+        swrst_t* cur_srt_r = &b_sw_vals_right[process_id];
+        swseq_t* cur_seq_r = cur_srt_r->sw_seq;
+        if (s->qbeg + s->len != l_query) { // right extension init
+            //                    int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+            int qe,re;
+            qe = s->qbeg + s->len;
+            re = s->rbeg + s->len - rmax[0];
+            assert(re >= 0);
+            //NEO: warp or block
+            cur_seq_r->qlen = l_query - qe;
+            cur_seq_r->query = query + qe;
+            cur_seq_r->rlen = rmax[1] - rmax[0] - re;
+            cur_seq_r->ref = rseq + re;
+            cur_srt_r->h0 = cur_srt_l->score;
+            cur_srt_r->score = cur_srt_l->score;
+        }
+        else{
+            cur_seq_r->qlen = 0;
+            cur_seq_r->rlen = 0;
+        }
+    }
+    
+    //right extension main process
+    ksw_extend_batchw2(b_sw_vals_right, nxt_process_pext->n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip3, opt->zdrop);
+    //post process
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        ext_info* cur_ext = nxt_process_pext->a[process_id];
+        //        uint8_t* rseq =  cur_ext->rseq;
+        int64_t *rmax = cur_ext->rmax;
+        const mem_chain_t*c = cur_ext->c;
+        //        const uint8_t * query = cur_ext->query;
+        int l_query = cur_ext->l_query;
+        mem_alnreg_v * av = cur_ext->av;
+        const mem_seed_t *s = cur_ext->seed;
+        mem_alnreg_t *a;
+        int aw[2]; // aw: actual bandwidth used in extension
+        a = kv_pushp(mem_alnreg_t, *av);
+        memset(a, 0, sizeof(mem_alnreg_t));
+        a->w = aw[0] = aw[1] = opt->w;
+        a->score = a->truesc = -1;
+        a->rid = c->rid;
+        
+        //        int64_t tmp;
+        swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
+        //        swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+        
+        if (s->qbeg) { // left extension finalize
+            int qle, tle, gtle, gscore;
+            qle = cur_srt_l->qle;
+            tle = cur_srt_l->tle;
+            gtle = cur_srt_l->gtle;
+            gscore = cur_srt_l->gscore;
+            a->score = cur_srt_l->score;
+            aw[0]=cur_srt_l->w;
+            // check whether we prefer to reach the end of the query
+            if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
+                a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
+                a->truesc = a->score;
+            } else { // to-end extension
+                a->qb = 0, a->rb = s->rbeg - gtle;
+                a->truesc = gscore;
+            }
+        } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
+        
+        swrst_t* cur_srt_r = &b_sw_vals_right[process_id];
+        //        swseq_t* cur_seq_r = cur_srt_r->sw_seq;
         if (s->qbeg + s->len != l_query) { // right extension
             //NEO: warp or block
             int qle, tle, gtle, gscore, sc0 = cur_srt_r->h0;
