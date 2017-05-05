@@ -2320,21 +2320,44 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
 {
     assert(m==5);
     
-    for(int process_id=0; process_id<size; process_id++)
+    //task index indicator
+    i_vec swrstid_cur,swrstid_nxt, swrstid_tmp;
+    swrstid_cur.a=malloc(sizeof(int)*size);
+    swrstid_cur.m=size;
+    swrstid_cur.n=0;
+    swrstid_nxt.a=malloc(sizeof(int)*size);
+    swrstid_nxt.m=size;
+    swrstid_nxt.n=0;
+    
+    //init work task
+    for(int i=0; i<size;++i)
     {
-        swrst_t* cur_ptr = &swrts[process_id];
-        swseq_t* cur_seq = cur_ptr->sw_seq;
-        if(cur_seq->qlen!=0)
+        swrst_t *sw = swrts+i;
+        swseq_t *seq = sw->sw_seq;
+        if(seq->qlen!=0)
         {
-            for (int i = 0; i < MAX_BAND_TRY; ++i) {
-                cur_ptr->pre_score =  cur_ptr->score;
-                cur_ptr->w = ini_w << i;
-                //NEO: the most time consuming part
-                cur_ptr->score = ksw_extend2(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, cur_ptr->w, end_bonus, zdrop, cur_ptr->h0, &cur_ptr->qle, &cur_ptr->tle, &cur_ptr->gtle, &cur_ptr->gscore, &cur_ptr->max_off);
-                if ( cur_ptr->score == cur_ptr->pre_score || cur_ptr->max_off< (cur_ptr->w>>1) + (cur_ptr->w>>2)) break;
-            }
+            sw->w=ini_w;
+            kv_push(int, swrstid_cur, i);
         }
     }
+    
+    for(int process_id=0; process_id<swrstid_cur.n; process_id++)
+    {
+        swrst_t* cur_ptr = &swrts[swrstid_cur.a[process_id]];
+        swseq_t* cur_seq = cur_ptr->sw_seq;
+
+        for (int i = 0; i < MAX_BAND_TRY; ++i) {
+            cur_ptr->pre_score =  cur_ptr->score;
+            cur_ptr->w = ini_w << i;
+            //NEO: the most time consuming part
+            cur_ptr->score = ksw_extend2(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, cur_ptr->w, end_bonus, zdrop, cur_ptr->h0, &cur_ptr->qle, &cur_ptr->tle, &cur_ptr->gtle, &cur_ptr->gscore, &cur_ptr->max_off);
+            if ( cur_ptr->score == cur_ptr->pre_score || cur_ptr->max_off< (cur_ptr->w>>1) + (cur_ptr->w>>2)) break;
+        }
+    }
+    
+    
+    kv_destroy(swrstid_cur);
+    kv_destroy(swrstid_nxt);
 }
 
 
