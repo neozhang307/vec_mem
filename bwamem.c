@@ -2768,7 +2768,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     if (bwa_verbose >= 4)
                         printf("RESCURE_MARK** Seed(%d,%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", batch_id, k);
                 }
-                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d) [%ld;%ld,%ld] @ %s <---\n", cur_ext->seed_id, (long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[cur_ext->c->rid].name);
+                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d,%d) [%ld;%ld,%ld] @ %s <---\n", batch_id, k,(long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[cur_ext->c->rid].name);
                 kv_push(ext_info*,nxt_process_pext,cur_ext);
                 break;
             }
