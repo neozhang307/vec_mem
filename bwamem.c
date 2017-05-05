@@ -2315,8 +2315,10 @@ static void worker_mod_batch(void *data, int start, int batch, int tid)
             memset(b_sw_seq_right, 0, sizeof(swseq_t));
             for(int cur_ptr=0; cur_ptr<sw_nxt_process.n; cur_ptr++)//init sw related values
             {
-                swseq_t* cur_seq = &b_sw_seq_right[cur_ptr];
-                swrst_t* cur_srt = &b_sw_vals_right[cur_ptr];
+                swseq_t* cur_seq;
+                swrst_t* cur_srt;
+                cur_seq = &b_sw_seq_right[cur_ptr];
+                cur_srt = &b_sw_vals_right[cur_ptr];
                 cur_srt->sw_seq=cur_seq;
                 cur_seq = &b_sw_seq_left[cur_ptr];
                 cur_srt = &b_sw_vals_left[cur_ptr];
@@ -2705,26 +2707,72 @@ void seed_extension_scalar_batch(const mem_opt_t *opt, pext_vec *nxt_process_pex
 void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
 {
     int process_size = nxt_process_pext->n;
+    //swseq: interval value of SW operation
+    //seq: sequence value
     swseq_t* b_sw_seq_left = malloc(sizeof(swseq_t)*process_size);
     swrst_t* b_sw_vals_left = malloc(sizeof(swrst_t)*process_size);
     swseq_t* b_sw_seq_right = malloc(sizeof(swseq_t)*process_size);
     swrst_t* b_sw_vals_right = malloc(sizeof(swrst_t)*process_size);
-    memset(b_sw_seq_left, 0,sizeof(swrst_t));
-    memset(b_sw_seq_right, 0, sizeof(swrst_t));
+    memset(b_sw_seq_left, 0, process_size);
+    memset(b_sw_seq_right, 0, process_size);
 
+    //init sw related values
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        swseq_t* cur_seq;
+        swrst_t* cur_srt;
+        cur_seq = &b_sw_seq_right[process_id];
+        cur_srt = &b_sw_vals_right[process_id];
+        cur_srt->sw_seq=cur_seq;
+        cur_seq = &b_sw_seq_left[process_id];
+        cur_srt = &b_sw_vals_left[process_id];
+        cur_srt->sw_seq=cur_seq;
+    }
+    //left extension init
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        ext_info* cur_ext = nxt_process_pext->a[process_id];
+        swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
+        swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+        
+        const uint8_t * query = cur_ext->query;
+        uint8_t* rseq =  cur_ext->rseq;
+        int64_t *rmax = cur_ext->rmax;
+        const mem_seed_t *s = cur_ext->seed;
+        if(s->qbeg)
+        {
+            int64_t tmp;
+            uint8_t *rs, *qs;
+            int qle, tle, gtle, gscore;
+            qs = malloc(s->qbeg);
+            for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
+            tmp = s->rbeg - rmax[0];
+            rs = malloc(tmp);
+            for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
+            cur_seq_l->qlen = s->qbeg;
+            cur_seq_l->query = qs;
+            cur_seq_l->rlen = tmp;
+            cur_seq_l->ref = rs;
+            cur_srt_l->h0 = s->len * opt->a;
+        }
+        else
+        {
+            cur_seq_l->qlen=0;
+            cur_seq_l->rlen=0;
+        }
+    }
+    
     
     for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
     {
-        ext_info* cur_ext = nxt_process_pext->a[process_id];//&nxt_process_ext.a[process_id];
-        // int k = process_seedid[batch_id];
-        //ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
-        uint8_t* rseq =  cur_ext->rseq;//chnv_rseqs[chain_id];
+        ext_info* cur_ext = nxt_process_pext->a[process_id];
+        uint8_t* rseq =  cur_ext->rseq;
         int64_t *rmax = cur_ext->rmax;
         const mem_chain_t*c = cur_ext->c;
-        const uint8_t * query = cur_ext->query;//(uint8_t*)seq;
-        int l_query = cur_ext->l_query;//l_seq;
+        const uint8_t * query = cur_ext->query;
+        int l_query = cur_ext->l_query;
         mem_alnreg_v * av = cur_ext->av;
-        const mem_seed_t *s = cur_ext->seed;//ext_task->a[(uint32_t)sidx[k]].seed;
+        const mem_seed_t *s = cur_ext->seed;
         mem_alnreg_t *a;
         int max_off[2], aw[2]; // aw: actual bandwidth used in extension
         a = kv_pushp(mem_alnreg_t, *av);
@@ -2735,25 +2783,16 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         
         int64_t tmp;
         
+        swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
+        swseq_t* cur_seq_l = cur_srt_l->sw_seq;
         
         if (s->qbeg) { // left extension
-            uint8_t *rs, *qs;
             int qle, tle, gtle, gscore;
-            qs = malloc(s->qbeg);
-            for (int i = 0; i < s->qbeg; ++i) qs[i] = query[s->qbeg - 1 - i];
-            tmp = s->rbeg - rmax[0];
-            rs = malloc(tmp);
-            for (int i = 0; i < tmp; ++i) rs[i] = rseq[tmp - 1 - i];
             for (int i = 0; i < MAX_BAND_TRY; ++i) {
                 int prev = a->score;
                 aw[0] = opt->w << i;
-                if (bwa_verbose >= 4) {
-                    int j;
-                    printf("*** Left ref:   "); for (j = 0; j < tmp; ++j) putchar("ACGTN"[(int)rs[j]]); putchar('\n');
-                    printf("*** Left query: "); for (j = 0; j < s->qbeg; ++j) putchar("ACGTN"[(int)qs[j]]); putchar('\n');
-                }
                 //NEO: the most time consuming part
-                a->score = ksw_extend2(s->qbeg, qs, tmp, rs, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
+                a->score = ksw_extend2(cur_seq_l->qlen, cur_seq_l->query, cur_seq_l->rlen, cur_seq_l->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
                 if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
                 if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
             }
@@ -2765,7 +2804,7 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
                 a->qb = 0, a->rb = s->rbeg - gtle;
                 a->truesc = gscore;
             }
-            free(qs); free(rs);
+//            free(qs); free(rs);
         } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
         if (s->qbeg + s->len != l_query) { // right extension
             int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
