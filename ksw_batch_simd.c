@@ -2314,7 +2314,24 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
     kv_destroy(swrstid_cur);
     kv_destroy(swrstid_nxt);
 }
-
+void ksw_extend_batchw_core_scalar(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+    // ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+    for(int process_id=0; process_id<v_id.n; process_id++)
+    {
+        swrst_t* cur_ptr = &swrts[v_id.a[process_id]];
+        swseq_t *cur_seq = cur_ptr->sw_seq;
+        cur_ptr->score = ksw_extend2(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, cur_ptr->w, end_bonus, zdrop, cur_ptr->h0, &cur_ptr->qle, &cur_ptr->tle, &cur_ptr->gtle, &cur_ptr->gscore, &cur_ptr->max_off);
+    }
+}
+void ksw_extend_batchw_core2(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+   // ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+    for(int process_id=0; process_id<v_id.n; process_id++)
+    {
+        swrst_t* cur_ptr = &swrts[v_id.a[process_id]];
+        swseq_t *cur_seq = cur_ptr->sw_seq;
+        cur_ptr->score = ksw_extend2(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, cur_ptr->w, end_bonus, zdrop, cur_ptr->h0, &cur_ptr->qle, &cur_ptr->tle, &cur_ptr->gtle, &cur_ptr->gscore, &cur_ptr->max_off);
+    }
+}
 
 void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
@@ -2341,13 +2358,14 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
         }
     }
     for (int i = 0; i < MAX_BAND_TRY; ++i) {
-        
+        int w =ini_w << i;
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
             swrst_t* cur_ptr = &swrts[swrstid_cur.a[process_id]];
             cur_ptr->pre_score =  cur_ptr->score;
-            cur_ptr->w = ini_w << i;
+           // cur_ptr->w = ini_w << i;
         }
+        ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
             swrst_t* cur_ptr = &swrts[swrstid_cur.a[process_id]];
@@ -2357,10 +2375,11 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
             swrst_t* cur_ptr = &swrts[swrstid_cur.a[process_id]];
-            if ( cur_ptr->score == cur_ptr->pre_score || cur_ptr->max_off< (cur_ptr->w>>1) + (cur_ptr->w>>2))
+            if ( cur_ptr->score == cur_ptr->pre_score || cur_ptr->max_off< (w>>1) + (w>>2))
             {
                 continue;
             }
+            cur_ptr->w=w;
             kv_push(int,swrstid_nxt,swrstid_cur.a[process_id]);
         }
         swrstid_tmp=swrstid_nxt;
