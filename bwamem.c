@@ -2754,6 +2754,7 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
             cur_seq_l->rlen = tmp;
             cur_seq_l->ref = rs;
             cur_srt_l->h0 = s->len * opt->a;
+            cur_srt_l->score = -1;
         }
         else
         {
@@ -2761,7 +2762,23 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
             cur_seq_l->rlen=0;
         }
     }
-    
+    //left extension main process
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
+        swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+        if(cur_seq_l->qlen!=0)
+        {
+            for (int i = 0; i < MAX_BAND_TRY; ++i) {
+                int prev =  cur_srt_l->score;
+                cur_srt_l->w = opt->w << i;
+                //NEO: the most time consuming part
+                cur_srt_l->score = ksw_extend2(cur_seq_l->qlen, cur_seq_l->query, cur_seq_l->rlen, cur_seq_l->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, cur_srt_l->w, opt->pen_clip5, opt->zdrop, cur_srt_l->h0, &cur_srt_l->qle, &cur_srt_l->tle, &cur_srt_l->gtle, &cur_srt_l->gscore, &cur_srt_l->max_off);
+                if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, cur_srt_l->score, cur_srt_l->w, cur_srt_l->max_off); fflush(stdout); }
+                if ( cur_srt_l->score == prev || cur_srt_l->max_off< (cur_srt_l->w>>1) + (cur_srt_l->w>>2)) break;
+            }
+        }
+    }
     
     for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
     {
@@ -2788,14 +2805,11 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         
         if (s->qbeg) { // left extension
             int qle, tle, gtle, gscore;
-            for (int i = 0; i < MAX_BAND_TRY; ++i) {
-                int prev = a->score;
-                aw[0] = opt->w << i;
-                //NEO: the most time consuming part
-                a->score = ksw_extend2(cur_seq_l->qlen, cur_seq_l->query, cur_seq_l->rlen, cur_seq_l->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[0], opt->pen_clip5, opt->zdrop, s->len * opt->a, &qle, &tle, &gtle, &gscore, &max_off[0]);
-                if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[0], max_off[0]); fflush(stdout); }
-                if (a->score == prev || max_off[0] < (aw[0]>>1) + (aw[0]>>2)) break;
-            }
+            qle = cur_srt_l->qle;
+            tle = cur_srt_l->tle;
+            gtle = cur_srt_l->gtle;
+            gscore = cur_srt_l->gscore;
+            a->score = cur_srt_l->score;
             // check whether we prefer to reach the end of the query
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
                 a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
