@@ -2760,6 +2760,7 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         {
             cur_seq_l->qlen=0;
             cur_seq_l->rlen=0;
+            cur_srt_l->score = s->len * opt->a;
         }
     }
     //left extension main process
@@ -2777,6 +2778,41 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
                 if (bwa_verbose >= 4) { printf("*** Left extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, cur_srt_l->score, cur_srt_l->w, cur_srt_l->max_off); fflush(stdout); }
                 if ( cur_srt_l->score == prev || cur_srt_l->max_off< (cur_srt_l->w>>1) + (cur_srt_l->w>>2)) break;
             }
+        }
+    }
+    
+    //post init right extension
+    for(int process_id=0; process_id<nxt_process_pext->n; process_id++)
+    {
+        ext_info* cur_ext = nxt_process_pext->a[process_id];
+        mem_seed_t* s = cur_ext->seed;
+        const uint8_t *query = cur_ext->query;
+        uint8_t *rseq = cur_ext->rseq;
+        int l_query = cur_ext->l_query;
+        int64_t* rmax = cur_ext->rmax;
+        
+        
+        swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
+        swseq_t* cur_seq_l = cur_srt_l->sw_seq;
+        swrst_t* cur_srt_r = &b_sw_vals_right[process_id];
+        swseq_t* cur_seq_r = cur_srt_r->sw_seq;
+        if (s->qbeg + s->len != l_query) { // right extension init
+            //                    int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+            int qe,re;
+            qe = s->qbeg + s->len;
+            re = s->rbeg + s->len - rmax[0];
+            assert(re >= 0);
+            //NEO: warp or block
+            cur_seq_r->qlen = l_query - qe;
+            cur_seq_r->query = query + qe;
+            cur_seq_r->rlen = rmax[1] - rmax[0] - re;
+            cur_seq_r->ref = rseq + re;
+            cur_srt_r->h0 = cur_srt_l->score;
+            cur_srt_r->score = cur_srt_l->score;
+        }
+        else{
+            cur_seq_r->qlen = 0;
+            cur_seq_r->rlen = 0;
         }
     }
     
@@ -2803,13 +2839,14 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         swrst_t* cur_srt_l = &b_sw_vals_left[process_id];
         swseq_t* cur_seq_l = cur_srt_l->sw_seq;
         
-        if (s->qbeg) { // left extension
+        if (s->qbeg) { // left extension finalize
             int qle, tle, gtle, gscore;
             qle = cur_srt_l->qle;
             tle = cur_srt_l->tle;
             gtle = cur_srt_l->gtle;
             gscore = cur_srt_l->gscore;
             a->score = cur_srt_l->score;
+            aw[0]=cur_srt_l->w;
             // check whether we prefer to reach the end of the query
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
                 a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
@@ -2818,28 +2855,31 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
                 a->qb = 0, a->rb = s->rbeg - gtle;
                 a->truesc = gscore;
             }
-//            free(qs); free(rs);
         } else a->score = a->truesc = s->len * opt->a, a->qb = 0, a->rb = s->rbeg;
+        
+        swrst_t* cur_srt_r = &b_sw_vals_right[process_id];
+        swseq_t* cur_seq_r = cur_srt_r->sw_seq;
         if (s->qbeg + s->len != l_query) { // right extension
-            int qle, tle, qe, re, gtle, gscore, sc0 = a->score;
+            //NEO: warp or block
+            for (int i = 0; i < MAX_BAND_TRY; ++i) {
+                int prev = cur_srt_r->score;
+                cur_srt_r->w = opt->w << i;
+                cur_srt_r->score = ksw_extend2(cur_seq_r->qlen, cur_seq_r->query, cur_seq_r->rlen, cur_seq_r->ref, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, cur_srt_r->w, opt->pen_clip3, opt->zdrop, cur_srt_r->h0, &cur_srt_r->qle, &cur_srt_r->tle, &cur_srt_r->gtle, &cur_srt_r->gscore, &cur_srt_r->max_off);
+                if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev,  cur_srt_r->score, cur_srt_r->w, max_off[1]); fflush(stdout); }
+                if ( cur_srt_r->score == prev || cur_srt_r->max_off < (cur_srt_r->w>>1) + (cur_srt_r->w>>2)) break;
+            }
+            
+            int qle, tle, gtle, gscore, sc0 = cur_srt_r->h0;
+            qle = cur_srt_r->qle;
+            tle = cur_srt_r->tle;
+            gtle = cur_srt_r->gtle;
+            gscore = cur_srt_r->gscore;
+            int qe,re;
             qe = s->qbeg + s->len;
             re = s->rbeg + s->len - rmax[0];
             assert(re >= 0);
-            
-            //NEO: warp or block
-            for (int i = 0; i < MAX_BAND_TRY; ++i) {
-                int prev = a->score;
-                aw[1] = opt->w << i;
-                if (bwa_verbose >= 4) {
-                    int j;
-                    printf("*** Right ref:   "); for (j = 0; j < rmax[1] - rmax[0] - re; ++j) putchar("ACGTN"[(int)rseq[re+j]]); putchar('\n');
-                    printf("*** Right query: "); for (j = 0; j < l_query - qe; ++j) putchar("ACGTN"[(int)query[qe+j]]); putchar('\n');
-                }
-                a->score = ksw_extend2(l_query - qe, query + qe, rmax[1] - rmax[0] - re, rseq + re, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, aw[1], opt->pen_clip3, opt->zdrop, sc0, &qle, &tle, &gtle, &gscore, &max_off[1]);
-                if (bwa_verbose >= 4) { printf("*** Right extension: prev_score=%d; score=%d; bandwidth=%d; max_off_diagonal_dist=%d\n", prev, a->score, aw[1], max_off[1]); fflush(stdout); }
-                if (a->score == prev || max_off[1] < (aw[1]>>1) + (aw[1]>>2)) break;
-            }
-            
+            aw[1] = cur_srt_r->w;
+            a->score= cur_srt_r->score;
             // similar to the above
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip3) { // local extension
                 a->qe = qe + qle, a->re = rmax[0] + re + tle;
@@ -2849,6 +2889,7 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
                 a->truesc += gscore - sc0;
             }
         } else a->qe = l_query, a->re = s->rbeg + s->len;
+        
         if (bwa_verbose >= 4) printf("*** Added alignment region: [%d,%d) <=> [%ld,%ld); score=%d; {left,right}_bandwidth={%d,%d}\n", a->qb, a->qe, (long)a->rb, (long)a->re, a->score, aw[0], aw[1]);
         // compute seedcov
         {
