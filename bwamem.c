@@ -2715,8 +2715,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     {
         ext_vec* ext_task = ext_task_q+batch_id;
         uint64_t* sidx = sidxes[batch_id];
-        if(process_seedid[batch_id]>=0)
-        for(;process_seedid[batch_id]>=0; )
+//        if(process_seedid[batch_id]>=0)
+        for(;process_seedid[batch_id]>=0; --process_seedid[batch_id])
         {
             {
                 int k = process_seedid[batch_id];
@@ -2771,7 +2771,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 }
                 if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d,%d) [%ld;%ld,%ld] @ %s <---\n", batch_id, k,(long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[cur_ext->c->rid].name);
                 kv_push(ext_info*,nxt_process_pext,cur_ext);
-                --process_seedid[batch_id];
+                --process_seedid[batch_id];//the later break would dismiss the minus operation
                 break;
             }
         }
