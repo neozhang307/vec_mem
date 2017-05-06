@@ -2012,7 +2012,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     int ptr = 0;
     
     int threashold = 0;
-    while((uint32_t)swlen[ptr]==0&&ptr<size) ptr++;
+    while(ptr<size&&(uint32_t)swlen[ptr]==0) ptr++;
     
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
