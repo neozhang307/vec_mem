@@ -3049,6 +3049,8 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
             gscore = cur_srt_l->gscore;
             a->score = cur_srt_l->score;
             aw[0]=cur_srt_l->w;
+            free((uint8_t*)cur_srt_l->sw_seq->ref);
+            free((uint8_t*)cur_srt_l->sw_seq->query);
             // check whether we prefer to reach the end of the query
             if (gscore <= 0 || gscore <= a->score - opt->pen_clip5) { // local extension
                 a->qb = s->qbeg - qle, a->rb = s->rbeg - tle;
@@ -3310,6 +3312,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     free(sidxes);
     free(read_rseqs);
     free(read_rmaxs);
+    free(process_seedid);
 }
 
 void post_extensiong_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, int batch,  mem_alnreg_v *local_regvs,  mem_alnreg_v *global_regvs)
