@@ -1149,11 +1149,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 break;//break_flag=1;//when all equal to zero, break;
             }
             
-            cond = _mm_cmpgt_epi16(v_m, v_max);// if (ms[process_batch_id] > maxs[process_batch_id])
+            cond = _mm_cmpgt_epi16(v_m, v_max);// if m>max
             cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-            cmp_gen_result(cond, v_m, v_max, tmp_out_true, tmp_out_false, v_max);
-            cmp_gen_result(cond, v_i, v_max_i, tmp_out_true, tmp_out_false, v_max_i);
-            cmp_gen_result(cond, v_mj, v_max_j, tmp_out_true, tmp_out_false, v_max_j);
+            cmp_gen_result(cond, v_m, v_max, tmp_out_true, tmp_out_false, v_max);//max=m
+            cmp_gen_result(cond, v_i, v_max_i, tmp_out_true, tmp_out_false, v_max_i);//maxi=i
+            cmp_gen_result(cond, v_mj, v_max_j, tmp_out_true, tmp_out_false, v_max_j);//maxj=j
             //max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
             __m128i v_tmp_maxoff = _mm_abs_epi16( _mm_subs_epi16(v_mj, v_i));
             v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
@@ -2314,7 +2314,7 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
     kv_destroy(swrstid_cur);
     kv_destroy(swrstid_nxt);
 }
-void ksw_extend_batchw_core_vector(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+void ksw_extend_batchw_core_prove_equal(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
 
     
     for(int process_id=0; process_id<v_id.n; process_id++)
@@ -2459,7 +2459,7 @@ void ksw_extend_batchw_core_vector(swrst_t* swrts, i_vec v_id, int m, const int8
         assert(correct==1);
     }
 }
-void ksw_extend_batchw_core_equality_prove(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+void ksw_extend_batchw_core_vector(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     
     
     for(int process_id=0; process_id<v_id.n; process_id++)
@@ -2638,39 +2638,7 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             cur_ptr->pre_score =  cur_ptr->score;
         }
         
-        ksw_extend_batchw_core3(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-//        ksw_extend_batchw_core3(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-//        for(int i=0; i<size; i++)
-//        {
-//            int correct = 1;
-//            if(ano_swrts[i].score!=swrts[i].score)correct=0;
-//            if(ano_swrts[i].max_off!=swrts[i].max_off)correct=0;
-//            if(ano_swrts[i].qle!=swrts[i].qle)correct=0;
-//            if(ano_swrts[i].tle!=swrts[i].tle)correct=0;
-//            if(ano_swrts[i].gtle!=swrts[i].gtle)correct=0;
-//            if(ano_swrts[i].gscore!=swrts[i].gscore)
-//            {
-//                if(ano_swrts[i].gscore<=0&&swrts[i].gscore<=0)
-//                {
-//                    
-//                }
-//                else
-//                    correct=0;
-//                
-//            }
-//            if(correct==0)
-//            {
-//                fprintf(stderr,"i:%d\n",i);
-//                fprintf(stderr,"score c/m %d/%d\n",swrts[i].score, ano_swrts[i].score);
-//                fprintf(stderr,"max_off c/m %d/%d\n",swrts[i].max_off, ano_swrts[i].max_off);
-//                fprintf(stderr,"qle c/m %d/%d\n",swrts[i].qle, ano_swrts[i].qle);
-//                fprintf(stderr,"tle c/m %d/%d\n",swrts[i].tle, ano_swrts[i].tle);
-//                fprintf(stderr,"gtle c/m %d/%d\n",swrts[i].gtle, ano_swrts[i].gtle);
-//                fprintf(stderr,"gscore c/m %d/%d\n",swrts[i].gscore, ano_swrts[i].gscore);
-//            }
-////            assert(correct==1);
-//        }
-//
+        ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
         
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
