@@ -2314,8 +2314,272 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
     kv_destroy(swrstid_cur);
     kv_destroy(swrstid_nxt);
 }
-void ksw_extend_batchw_core_scalar(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+void ksw_extend_batchw_core_vector(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
 
+    
+    for(int process_id=0; process_id<v_id.n; process_id++)
+    {
+        swrst_t *cur_ptr = &swrts[v_id.a[process_id]];
+        swseq_t *cur_seq = cur_ptr->sw_seq;
+        swrst_t another;
+        swrst_t *another_ptr = &another;
+        memcpy(another_ptr,cur_ptr,sizeof(swrst_t));
+        
+        cur_ptr->score = ksw_extend2(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, m, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop, cur_ptr->h0, &cur_ptr->qle, &cur_ptr->tle, &cur_ptr->gtle, &cur_ptr->gscore, &cur_ptr->max_off);
+//        int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w, int end_bonus, int zdrop, int h0, int *_qle, int *_tle, int *_gtle, int *_gscore, int *_max_off)
+        {
+            swrst_t* cur_ptr = another_ptr;
+            int qlen = cur_seq->qlen;
+            const uint8_t *query = cur_seq->query;
+            int tlen = cur_seq->rlen;
+            const uint8_t *target = cur_seq->ref;
+            int h0 = cur_ptr->h0;
+            eh_m *eh; // score array
+            int8_t *qp; // query profile
+            int i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end, max, max_i, max_j, max_ins, max_del, max_ie, gscore, max_off;
+            assert(h0 > 0);
+            // allocate memory
+            qp = malloc(qlen * m);
+            eh = calloc(qlen + 1, 8);
+            // generate the query profile
+            for (k = i = 0; k < m; ++k) {
+                const int8_t *p = &mat[k * m];
+                for (j = 0; j < qlen; ++j) qp[i++] = p[query[j]];
+            }
+            // fill the first row
+            eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
+            for (j = 2; j <= qlen && eh[j-1].h > e_ins; ++j)
+                eh[j].h = eh[j-1].h - e_ins;
+            // adjust $w if it is too large
+            k = m * m;
+            for (i = 0, max = 0; i < k; ++i) // get the max score
+                max = max > mat[i]? max : mat[i];
+            max_ins = (int)((double)(qlen * max + end_bonus - o_ins) / e_ins + 1.);
+            max_ins = max_ins > 1? max_ins : 1;
+            w = w < max_ins? w : max_ins;
+            max_del = (int)((double)(qlen * max + end_bonus - o_del) / e_del + 1.);
+            max_del = max_del > 1? max_del : 1;
+            w = w < max_del? w : max_del; // TODO: is this necessary?
+            // DP loop
+            max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
+            max_off = 0;
+            beg = 0, end = qlen;
+            for (i = 0; LIKELY(i < tlen); ++i) {
+                int t, f = 0, h1, m = 0, mj = -1;
+                int8_t *q = &qp[target[i] * qlen];
+                // apply the band and the constraint (if provided)
+                if (beg < i - w) beg = i - w;
+                if (end > i + w + 1) end = i + w + 1;
+                if (end > qlen) end = qlen;
+                // compute the first column
+                if (beg == 0) {
+                    h1 = h0 - (o_del + e_del * (i + 1));
+                    if (h1 < 0) h1 = 0;
+                } else h1 = 0;
+                for (j = beg; LIKELY(j < end); ++j) {
+                    // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
+                    // Similar to SSE2-SW, cells are computed in the following order:
+                    //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
+                    //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
+                    //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
+                    eh_m *p = &eh[j];
+                    int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
+                    p->h = h1;          // set H(i,j-1) for the next row
+                    M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
+                    h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
+                    h = h > f? h : f;
+                    h1 = h;             // save H(i,j) to h1 for the next column
+                    mj = m > h? mj : j; // record the position where max score is achieved
+                    m = m > h? m : h;   // m is stored at eh[mj+1]
+                    t = M - oe_del;
+                    t = t > 0? t : 0;
+                    e -= e_del;
+                    e = e > t? e : t;   // computed E(i+1,j)
+                    p->e = e;           // save E(i+1,j) for the next row
+                    t = M - oe_ins;
+                    t = t > 0? t : 0;
+                    f -= e_ins;
+                    f = f > t? f : t;   // computed F(i,j+1)
+                }
+                eh[end].h = h1; eh[end].e = 0;
+                if (j == qlen) {
+                    max_ie = gscore > h1? max_ie : i;
+                    gscore = gscore > h1? gscore : h1;
+                }
+                if (m == 0) break;
+                if (m > max) {
+                    max = m, max_i = i, max_j = mj;
+                    max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
+                } else if (zdrop > 0) {
+                    if (i - max_i > mj - max_j) {
+                        if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                    } else {
+                        if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                    }
+                }
+                // update beg and end for the next round
+                for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
+                beg = j;
+                for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
+                end = j + 2 < qlen? j + 2 : qlen;
+                //beg = 0; end = qlen; // uncomment this line for debugging
+            }
+            free(eh); free(qp);
+            int qle = max_j + 1;
+            int tle = max_i + 1;
+            int gtle = max_ie + 1;
+//            if (_gscore) *_gscore = gscore;
+//            if (_max_off) *_max_off = max_off;
+//            return max;
+            cur_ptr->qle = qle;
+            cur_ptr->tle = tle;
+            cur_ptr->gtle = gtle;
+            cur_ptr->gscore = gscore;
+            cur_ptr->max_off = max_off;
+            cur_ptr->score = max;
+        }
+        
+        int correct = 1;
+        if(another_ptr->score!=cur_ptr->score)correct = 0;
+        if(another_ptr->qle!=cur_ptr->qle)correct = 0;
+        if(another_ptr->tle!=cur_ptr->tle)correct = 0;
+        if(another_ptr->gtle!=cur_ptr->gtle)correct = 0;
+        if(another_ptr->gscore!=cur_ptr->gscore)correct = 0;
+        if(another_ptr->max_off!=cur_ptr->max_off)correct = 0;
+        
+        if(correct==0)
+        {
+            fprintf(stderr,"score c/m:%d/%d\n",cur_ptr->score,another_ptr->score);
+            fprintf(stderr,"qle c/m:%d/%d\n",cur_ptr->qle,another_ptr->qle);
+            fprintf(stderr,"tle c/m:%d/%d\n",cur_ptr->tle,another_ptr->tle);
+            fprintf(stderr,"gtle c/m:%d/%d\n",cur_ptr->gtle,another_ptr->gtle);
+            fprintf(stderr,"gscore c/m:%d/%d\n",cur_ptr->gscore,another_ptr->gscore);
+            fprintf(stderr,"max_off c/m:%d/%d\n",cur_ptr->max_off,another_ptr->max_off);
+        }
+        assert(correct==1);
+    }
+}
+void ksw_extend_batchw_core_equality_prove(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+    
+    
+    for(int process_id=0; process_id<v_id.n; process_id++)
+    {
+        swrst_t *cur_ptr = &swrts[v_id.a[process_id]];
+        swseq_t *cur_seq = cur_ptr->sw_seq;
+
+        {
+
+            int qlen = cur_seq->qlen;
+            const uint8_t *query = cur_seq->query;
+            int tlen = cur_seq->rlen;
+            const uint8_t *target = cur_seq->ref;
+            int h0 = cur_ptr->h0;
+            eh_m *eh; // score array
+            int8_t *qp; // query profile
+            int i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end, max, max_i, max_j, max_ins, max_del, max_ie, gscore, max_off;
+            assert(h0 > 0);
+            // allocate memory
+            qp = malloc(qlen * m);
+            eh = calloc(qlen + 1, 8);
+            // generate the query profile
+            for (k = i = 0; k < m; ++k) {
+                const int8_t *p = &mat[k * m];
+                for (j = 0; j < qlen; ++j) qp[i++] = p[query[j]];
+            }
+            // fill the first row
+            eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
+            for (j = 2; j <= qlen && eh[j-1].h > e_ins; ++j)
+                eh[j].h = eh[j-1].h - e_ins;
+            // adjust $w if it is too large
+            k = m * m;
+            for (i = 0, max = 0; i < k; ++i) // get the max score
+                max = max > mat[i]? max : mat[i];
+            max_ins = (int)((double)(qlen * max + end_bonus - o_ins) / e_ins + 1.);
+            max_ins = max_ins > 1? max_ins : 1;
+            w = w < max_ins? w : max_ins;
+            max_del = (int)((double)(qlen * max + end_bonus - o_del) / e_del + 1.);
+            max_del = max_del > 1? max_del : 1;
+            w = w < max_del? w : max_del; // TODO: is this necessary?
+            // DP loop
+            max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
+            max_off = 0;
+            beg = 0, end = qlen;
+            for (i = 0; LIKELY(i < tlen); ++i) {
+                int t, f = 0, h1, m = 0, mj = -1;
+                int8_t *q = &qp[target[i] * qlen];
+                // apply the band and the constraint (if provided)
+                if (beg < i - w) beg = i - w;
+                if (end > i + w + 1) end = i + w + 1;
+                if (end > qlen) end = qlen;
+                // compute the first column
+                if (beg == 0) {
+                    h1 = h0 - (o_del + e_del * (i + 1));
+                    if (h1 < 0) h1 = 0;
+                } else h1 = 0;
+                for (j = beg; LIKELY(j < end); ++j) {
+                    // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
+                    // Similar to SSE2-SW, cells are computed in the following order:
+                    //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
+                    //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
+                    //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
+                    eh_m *p = &eh[j];
+                    int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
+                    p->h = h1;          // set H(i,j-1) for the next row
+                    M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
+                    h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
+                    h = h > f? h : f;
+                    h1 = h;             // save H(i,j) to h1 for the next column
+                    mj = m > h? mj : j; // record the position where max score is achieved
+                    m = m > h? m : h;   // m is stored at eh[mj+1]
+                    t = M - oe_del;
+                    t = t > 0? t : 0;
+                    e -= e_del;
+                    e = e > t? e : t;   // computed E(i+1,j)
+                    p->e = e;           // save E(i+1,j) for the next row
+                    t = M - oe_ins;
+                    t = t > 0? t : 0;
+                    f -= e_ins;
+                    f = f > t? f : t;   // computed F(i,j+1)
+                }
+                eh[end].h = h1; eh[end].e = 0;
+                if (j == qlen) {
+                    max_ie = gscore > h1? max_ie : i;
+                    gscore = gscore > h1? gscore : h1;
+                }
+                if (m == 0) break;
+                if (m > max) {
+                    max = m, max_i = i, max_j = mj;
+                    max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
+                } else if (zdrop > 0) {
+                    if (i - max_i > mj - max_j) {
+                        if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
+                    } else {
+                        if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
+                    }
+                }
+                // update beg and end for the next round
+                for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
+                beg = j;
+                for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
+                end = j + 2 < qlen? j + 2 : qlen;
+                //beg = 0; end = qlen; // uncomment this line for debugging
+            }
+            free(eh); free(qp);
+            int qle = max_j + 1;
+            int tle = max_i + 1;
+            int gtle = max_ie + 1;
+
+            cur_ptr->qle = qle;
+            cur_ptr->tle = tle;
+            cur_ptr->gtle = gtle;
+            cur_ptr->gscore = gscore;
+            cur_ptr->max_off = max_off;
+            cur_ptr->score = max;
+        }
+    }
+}
+void ksw_extend_batchw_core_scalar(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+    
     
     for(int process_id=0; process_id<v_id.n; process_id++)
     {
@@ -2323,9 +2587,9 @@ void ksw_extend_batchw_core_scalar(swrst_t* swrts, i_vec v_id, int m, const int8
         swseq_t *cur_seq = cur_ptr->sw_seq;
         cur_ptr->score = ksw_extend2(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, cur_ptr->w, end_bonus, zdrop, cur_ptr->h0, &cur_ptr->qle, &cur_ptr->tle, &cur_ptr->gtle, &cur_ptr->gscore, &cur_ptr->max_off);
     }
-
-
 }
+
+
 void ksw_extend_batchw_core2(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     
     ksw_extend_batchw_core_scalar( swrts,  v_id,  m, mat, o_del, e_del,  o_ins,  e_ins,  w,   end_bonus,  zdrop);
@@ -2334,7 +2598,7 @@ void ksw_extend_batchw_core2(swrst_t* swrts, i_vec v_id, int m, const int8_t *ma
 
 void ksw_extend_batchw_core3(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     
-    ksw_extend_batchw_core_scalar( swrts,  v_id,  m, mat, o_del, e_del,  o_ins,  e_ins,  w,   end_bonus,  zdrop);
+    ksw_extend_batchw_core_vector( swrts,  v_id,  m, mat, o_del, e_del,  o_ins,  e_ins,  w,   end_bonus,  zdrop);
     
 }
 
@@ -2363,8 +2627,8 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
         }
     }
     
-    swrst_t* ano_swrts = malloc(sizeof(swrst_t)*size);
-    memcpy(ano_swrts,swrts,sizeof(swrst_t)*size);
+//    swrst_t* ano_swrts = malloc(sizeof(swrst_t)*size);
+//    memcpy(ano_swrts,swrts,sizeof(swrst_t)*size);
     
     for (int i = 0; i < MAX_BAND_TRY; ++i) {
         int w =ini_w << i;
@@ -2374,30 +2638,39 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             cur_ptr->pre_score =  cur_ptr->score;
         }
         
-        ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-        ksw_extend_batchw_core3(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-        for(int i=0; i<size; i++)
-        {
-            int correct = 1;
-            if(ano_swrts[i].score!=swrts[i].score)correct=0;
-            if(ano_swrts[i].max_off!=swrts[i].max_off)correct=0;
-            if(ano_swrts[i].qle!=swrts[i].qle)correct=0;
-            if(ano_swrts[i].tle!=swrts[i].tle)correct=0;
-            if(ano_swrts[i].gtle!=swrts[i].gtle)correct=0;
-            if(ano_swrts[i].gscore!=swrts[i].gscore)correct=0;
-            if(correct==0)
-            {
-                fprintf(stderr,"i:%d\n",i);
-                fprintf(stderr,"score c/m %d/%d\n",swrts[i].score, ano_swrts[i].score);
-                fprintf(stderr,"max_off c/m %d/%d\n",swrts[i].max_off, ano_swrts[i].max_off);
-                fprintf(stderr,"qle c/m %d/%d\n",swrts[i].qle, ano_swrts[i].qle);
-                fprintf(stderr,"tle c/m %d/%d\n",swrts[i].tle, ano_swrts[i].tle);
-                fprintf(stderr,"gtle c/m %d/%d\n",swrts[i].gtle, ano_swrts[i].gtle);
-                fprintf(stderr,"gscore c/m %d/%d\n",swrts[i].gscore, ano_swrts[i].gscore);
-            }
-            assert(correct==1);
-        }
-        
+        ksw_extend_batchw_core3(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+//        ksw_extend_batchw_core3(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+//        for(int i=0; i<size; i++)
+//        {
+//            int correct = 1;
+//            if(ano_swrts[i].score!=swrts[i].score)correct=0;
+//            if(ano_swrts[i].max_off!=swrts[i].max_off)correct=0;
+//            if(ano_swrts[i].qle!=swrts[i].qle)correct=0;
+//            if(ano_swrts[i].tle!=swrts[i].tle)correct=0;
+//            if(ano_swrts[i].gtle!=swrts[i].gtle)correct=0;
+//            if(ano_swrts[i].gscore!=swrts[i].gscore)
+//            {
+//                if(ano_swrts[i].gscore<=0&&swrts[i].gscore<=0)
+//                {
+//                    
+//                }
+//                else
+//                    correct=0;
+//                
+//            }
+//            if(correct==0)
+//            {
+//                fprintf(stderr,"i:%d\n",i);
+//                fprintf(stderr,"score c/m %d/%d\n",swrts[i].score, ano_swrts[i].score);
+//                fprintf(stderr,"max_off c/m %d/%d\n",swrts[i].max_off, ano_swrts[i].max_off);
+//                fprintf(stderr,"qle c/m %d/%d\n",swrts[i].qle, ano_swrts[i].qle);
+//                fprintf(stderr,"tle c/m %d/%d\n",swrts[i].tle, ano_swrts[i].tle);
+//                fprintf(stderr,"gtle c/m %d/%d\n",swrts[i].gtle, ano_swrts[i].gtle);
+//                fprintf(stderr,"gscore c/m %d/%d\n",swrts[i].gscore, ano_swrts[i].gscore);
+//            }
+////            assert(correct==1);
+//        }
+//
         
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
