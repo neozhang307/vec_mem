@@ -2332,6 +2332,12 @@ void ksw_extend_batchw_core2(swrst_t* swrts, i_vec v_id, int m, const int8_t *ma
     
  }
 
+void ksw_extend_batchw_core3(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+    
+    ksw_extend_batchw_core_scalar( swrts,  v_id,  m, mat, o_del, e_del,  o_ins,  e_ins,  w,   end_bonus,  zdrop);
+    
+}
+
 void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
@@ -2369,27 +2375,28 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
         }
         
         ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-//        ksw_extend_batchw_core(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-//        for(int i=0; i<size; i++)
-//        {
-//            int correct = 1;
-//            if(ano_swrts[i].score!=swrts[i].score)correct=0;
-//            if(ano_swrts[i].max_off!=swrts[i].max_off)correct=0;
-//            if(ano_swrts[i].qle!=swrts[i].qle)correct=0;
-//            if(ano_swrts[i].tle!=swrts[i].tle)correct=0;
-//            if(ano_swrts[i].gtle!=swrts[i].gtle)correct=0;
-//            if(ano_swrts[i].gscore!=swrts[i].gscore)correct=0;
-//            if(correct==0)
-//            {
-//                fprintf(stderr,"score c/m",swrts[i].score, ano_swrts[i].score);
-//                fprintf(stderr,"max_off c/m",swrts[i].max_off, ano_swrts[i].max_off);
-//                fprintf(stderr,"qle c/m",swrts[i].qle, ano_swrts[i].qle);
-//                fprintf(stderr,"tle c/m",swrts[i].tle, ano_swrts[i].tle);
-//                fprintf(stderr,"gtle c/m",swrts[i].gtle, ano_swrts[i].gtle);
-//                fprintf(stderr,"gscore c/m",swrts[i].gscore, ano_swrts[i].gscore);
-//            }
-////            assert(correct==1);
-//        }
+        ksw_extend_batchw_core3(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+        for(int i=0; i<size; i++)
+        {
+            int correct = 1;
+            if(ano_swrts[i].score!=swrts[i].score)correct=0;
+            if(ano_swrts[i].max_off!=swrts[i].max_off)correct=0;
+            if(ano_swrts[i].qle!=swrts[i].qle)correct=0;
+            if(ano_swrts[i].tle!=swrts[i].tle)correct=0;
+            if(ano_swrts[i].gtle!=swrts[i].gtle)correct=0;
+            if(ano_swrts[i].gscore!=swrts[i].gscore)correct=0;
+            if(correct==0)
+            {
+                fprintf(stderr,"i:%d\n",i);
+                fprintf(stderr,"score c/m %d/%d\n",swrts[i].score, ano_swrts[i].score);
+                fprintf(stderr,"max_off c/m %d/%d\n",swrts[i].max_off, ano_swrts[i].max_off);
+                fprintf(stderr,"qle c/m %d/%d\n",swrts[i].qle, ano_swrts[i].qle);
+                fprintf(stderr,"tle c/m %d/%d\n",swrts[i].tle, ano_swrts[i].tle);
+                fprintf(stderr,"gtle c/m %d/%d\n",swrts[i].gtle, ano_swrts[i].gtle);
+                fprintf(stderr,"gscore c/m %d/%d\n",swrts[i].gscore, ano_swrts[i].gscore);
+            }
+            assert(correct==1);
+        }
         
         
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
