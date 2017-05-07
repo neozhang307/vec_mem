@@ -2748,10 +2748,6 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     w = max_gap < p->w? max_gap : p->w;
                     if (qd - rd < w && rd - qd < w) break;
                 }
-                if (bwa_verbose >= 4)
-                {
-                    printf("prepare for rescure i:/n:%d:\%d/n",i,av->n);
-                }
                 // NEO:
                 // rescue the seed marked as overlap, if it would lead to a different result
                 if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
@@ -2761,8 +2757,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     
                     //NEO: block structure
                     for (i = k + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
-                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
-                        if(cur_ext->chain_id!=pre_ext->chain_id)continue;
+//                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
+//                        if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                         const mem_seed_t *t;
                         if (sidx[i] == 0) continue;
                         t =  ext_task->a[(uint32_t)sidx[i]].seed;;//&c->seeds[(uint32_t)srt[i]];
