@@ -2783,7 +2783,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                         }
                     }
                     if (bwa_verbose >= 4)
-                        printf("RESCURE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+                        printf("RESCUE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                 }
                 
                 a = kv_pushp(mem_alnreg_t, *av);
