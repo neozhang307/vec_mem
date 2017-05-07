@@ -2770,7 +2770,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                             if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
                         }
                         
-                        if (is1st==1 && i == ext_task->n) { // no overlapping seeds; then skip extension
+                        if (is1st==0 && i == ext_task->n) { // no overlapping seeds; then skip extension
                             sidx[k] = 0; // mark that seed extension has not been performed
                             continue;
                         }
