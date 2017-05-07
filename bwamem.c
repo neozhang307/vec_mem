@@ -2691,7 +2691,14 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         {
             sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
         }
-        ks_introsort_64(ext_task->n, sidx);
+        mem_chain_v chnv = local_chnvs[batch_id];
+        uint64_t* sidx_ptr = sidx;
+        for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
+            const mem_chain_t*c =  &chnv.a[chain_id];
+            ks_introsort_64(c->n, sidx_ptr);
+            sidx_ptr+=c->n;
+        }
+//        ks_introsort_64(ext_task->n, sidx);
         for(int k=ext_task->n-1;k>=0;--k)
         {
 //        for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
@@ -2757,7 +2764,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     
                     //NEO: block structure
                     {
-                        int is1st = 1;
+                        int is1st = 0;//disable
                         for (i = k + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
                             ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
                             if(cur_ext->chain_id!=pre_ext->chain_id)continue;
