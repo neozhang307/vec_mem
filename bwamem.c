@@ -702,7 +702,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 				continue;
 			}
 			if (bwa_verbose >= 4)
-				printf("RESCURE** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+				printf("RESCUE** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
 		}
 
 		a = kv_pushp(mem_alnreg_t, *av);
