@@ -687,7 +687,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 		}
 		if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
 			if (bwa_verbose >= 4)
-				printf("** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
+				printf("DROP** Seed(%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
 					   k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
 			for (i = k + 1; i < c->n; ++i) { // check overlapping seeds in the same chain
 				const mem_seed_t *t;
@@ -702,7 +702,7 @@ void mem_chain2aln(const mem_opt_t *opt, const bntseq_t *bns, const uint8_t *pac
 				continue;
 			}
 			if (bwa_verbose >= 4)
-				printf("** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+				printf("RESCURE** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
 		}
 
 		a = kv_pushp(mem_alnreg_t, *av);
