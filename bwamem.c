@@ -3269,9 +3269,10 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                                    batch_id, k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
                         
                         //NEO: block structure
-                        for (i = k + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
-                            //ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
-                           // if(cur_ext->chain_id!=pre_ext->chain_id)continue;
+                        
+                        for (i = 0; i < k; ++i) { // check overlapping seeds in the same chain
+                            ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
+                            if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                             const mem_seed_t *t;
                             if (sidx[i] == 0) continue;
                             t =  ext_task->a[(uint32_t)sidx[i]].seed;;//&c->seeds[(uint32_t)srt[i]];
@@ -3280,12 +3281,12 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                             if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
                         }
                         
-                        if (i == ext_task->n) { // no overlapping seeds; then skip extension
+                        if (i == k) { // no overlapping seeds; then skip extension
                             sidx[k] = 0; // mark that seed extension has not been performed
                             continue;
                         }
                         if (bwa_verbose >= 4)
-                            printf("RESCURE_MARK** Seed(%d,%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", batch_id, k);
+                            printf("RESCUE_MARK** Seed(%d,%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", batch_id, k);
                     }
                     if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d,%d) [%ld;%ld,%ld] @ %s <---\n", batch_id, k,(long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[cur_ext->c->rid].name);
                     kv_push(ext_info*,nxt_process_pext,cur_ext);
