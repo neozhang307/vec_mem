@@ -2662,7 +2662,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     
     
     uint64_t** sidxes = malloc(sizeof(uint64_t*)*batch);
-    
+    int** cidxes = malloc(sizeof(int*)*batch);
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
         mem_chain_v chnv = local_chnvs[batch_id];
@@ -2671,10 +2671,14 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         
         ext_vec* ext_task = ext_task_q+batch_id;
         uint64_t* sidx = malloc(sizeof(uint64_t)*ext_task->n);
+        int* cidx = malloc(sizeof(int)*(chnv.n+1));
+        cidx[0]=0;
+        
         uint64_t* sidx_ptr = sidx;
         
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
             const mem_chain_t*c =  &chnv.a[chain_id];
+            cidx[chain_id+1]=cidx[chain_id-1];
             
             for(int i=0; i<c->n; i++)
             {
@@ -2695,6 +2699,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             sidx_ptr+=c->n;
         }
         sidxes[batch_id]=sidx;
+        cidxes[batch_id]=cidx;
     }
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
@@ -2755,20 +2760,20 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     
                     //NEO: block structure
                     {
-                        int is1st = 0;//disable
-                        for (i = k - 1; i >= 0; --i) { // check overlapping seeds in the same chain
-                            ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
+                        int is1st = 1;//disable
+                        for (i = 0; i <k; ++i) { // check overlapping seeds in the same chain
+                            ext_info * pre_ext = &ext_task->a[(uint32_t)sidx[i]];
                             if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                             is1st=0;
                             const mem_seed_t *t;
                             if (sidx[i] == 0) continue;
-                            t =  ext_task->a[(uint32_t)sidx[i]].seed;;//&c->seeds[(uint32_t)srt[i]];
+                            t =  pre_ext->seed;;//&c->seeds[(uint32_t)srt[i]];
                             if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
                             if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
                             if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
                         }
                         
-                        if (is1st==0 && i == ext_task->n) { // no overlapping seeds; then skip extension
+                        if (is1st==0 && i == k) { // no overlapping seeds; then skip extension
                             sidx[k] = 0; // mark that seed extension has not been performed
                             continue;
                         }
