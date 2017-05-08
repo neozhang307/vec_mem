@@ -3176,16 +3176,22 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         ext_task_q[batch_id].n = task_size;
     }
     
+    uint64_t** sidxes = malloc(sizeof(uint64_t*)*batch);
+    int* process_seedid = malloc(sizeof(int)*batch);
     for(int batch_id=0; batch_id<batch; batch_id++)//read
     {
+        
         mem_chain_v chnv = local_chnvs[batch_id];
         uint8_t** chnv_rseqs = read_rseqs[batch_id];
+        ext_vec* ext_task = ext_task_q+batch_id;
+        uint64_t* sidx = malloc(sizeof(uint64_t)*ext_task->n);
         int task_id=0;
+        
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
             const mem_chain_t*c =  &chnv.a[chain_id];
             for(int i=0; i<c->n; i++)
             {
-                ext_info * ext_tmp = &ext_task_q[batch_id].a[task_id++];
+                ext_info * ext_tmp = &ext_task->a[task_id++];
                 ext_tmp->c = c;
                 if (ext_tmp->c->n == 0) return;
                 ext_tmp->rseq = chnv_rseqs[chain_id];
@@ -3199,14 +3205,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                // ext_task_q[batch_id].a [task_id++].rmax=read_rmaxs[batch_id]+2*chain_id;
             }
         }
-    }
-    
-    uint64_t** sidxes = malloc(sizeof(uint64_t*)*batch);
-    int* process_seedid = malloc(sizeof(int)*batch);
-    for(int batch_id=0; batch_id<batch; batch_id++)//read
-    {
-        ext_vec* ext_task = ext_task_q+batch_id;
-        uint64_t* sidx = malloc(sizeof(uint64_t)*ext_task->n);
+        
         for(int i=0; i<ext_task->n;i++)
         {
             sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
@@ -3215,6 +3214,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         sidxes[batch_id]=sidx;
         process_seedid[batch_id] = ext_task->n-1;
     }
+    
+
     
     pext_vec nxt_process_pext;
     kv_init(nxt_process_pext);
