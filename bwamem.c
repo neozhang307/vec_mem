@@ -3107,7 +3107,8 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
     free(b_sw_seq_right);
     free(b_sw_vals_right);
 }
-
+#define ks_gt_generic(a, b) ((a) > (b))
+KSORT_INIT(64_rev,  uint64_t, ks_gt_generic)
 void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, mem_alnreg_v *local_regvs)
 {
 
@@ -3185,13 +3186,14 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         uint8_t** chnv_rseqs = read_rseqs[batch_id];
         ext_vec* ext_task = ext_task_q+batch_id;
         uint64_t* sidx = malloc(sizeof(uint64_t)*ext_task->n);
+        uint64_t* sidx_ptr = sidx;
         int task_id=0;
         
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
             const mem_chain_t*c =  &chnv.a[chain_id];
             for(int i=0; i<c->n; i++)
             {
-                ext_info * ext_tmp = &ext_task->a[task_id++];
+                ext_info * ext_tmp = &ext_task->a[task_id];
                 ext_tmp->c = c;
                 if (ext_tmp->c->n == 0) return;
                 ext_tmp->rseq = chnv_rseqs[chain_id];
@@ -3202,17 +3204,21 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 ext_tmp->av = local_regvs+batch_id;
                 ext_tmp->query =(uint8_t*) seqs[batch_id].seq;
                 ext_tmp->l_query = seqs[batch_id].l_seq;
+                sidx_ptr[i]=(uint64_t)ext_task->a[task_id].seed->score<<32|task_id;
+                task_id++;
                // ext_task_q[batch_id].a [task_id++].rmax=read_rmaxs[batch_id]+2*chain_id;
             }
+            ks_introsort_64_rev(c->n, sidx_ptr);
+            sidx_ptr+=c->n;
         }
         
-        for(int i=0; i<ext_task->n;i++)
-        {
-            sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
-        }
-        ks_introsort_64(ext_task->n, sidx);
+//        for(int i=0; i<ext_task->n;i++)
+//        {
+//            sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
+//        }
+//        ks_introsort_64(ext_task->n, sidx);
         sidxes[batch_id]=sidx;
-        process_seedid[batch_id] = ext_task->n-1;
+        process_seedid[batch_id] = 0;//ext_task->n-1;
     }
     
 
@@ -3227,7 +3233,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             ext_vec* ext_task = ext_task_q+batch_id;
             uint64_t* sidx = sidxes[batch_id];
     //        if(process_seedid[batch_id]>=0)
-            for(;process_seedid[batch_id]>=0; --process_seedid[batch_id])
+            for(;process_seedid[batch_id]<ext_task->n; ++process_seedid[batch_id])
+//                for(;process_seedid[batch_id]>=0; --process_seedid[batch_id])
             {
                 {
                     int k = process_seedid[batch_id];
@@ -3282,7 +3289,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     }
                     if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d,%d) [%ld;%ld,%ld] @ %s <---\n", batch_id, k,(long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[cur_ext->c->rid].name);
                     kv_push(ext_info*,nxt_process_pext,cur_ext);
-                    --process_seedid[batch_id];//the later break would dismiss the minus operation
+                    ++process_seedid[batch_id];//the later break would dismiss the minus operation
                     break;
                 }
             }
