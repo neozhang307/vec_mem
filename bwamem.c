@@ -2589,6 +2589,9 @@ typedef struct
     ext_info* a;
 }ext_vec;
 
+#define ks_gt_generic(a, b) ((a) > (b))
+KSORT_INIT(64_rev,  uint64_t, ks_gt_generic)
+
 void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bns, const uint8_t *pac, bseq1_t *seqs, smem_aux_t*aux, int batch, mem_chain_v *local_chnvs, mem_alnreg_v *local_regvs)
 {
 
@@ -2695,11 +2698,11 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         uint64_t* sidx_ptr = sidx;
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
             const mem_chain_t*c =  &chnv.a[chain_id];
-            ks_introsort_64(c->n, sidx_ptr);
+            ks_introsort_64_rev(c->n, sidx_ptr);
             sidx_ptr+=c->n;
         }
 //        ks_introsort_64(ext_task->n, sidx);
-        for(int k=ext_task->n-1;k>=0;--k)
+        for(int k=0;k<ext_task->n;++k)
         {
 //        for (int chain_id = 0; chain_id < chnv.n; ++chain_id)
 //        {
@@ -2765,7 +2768,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                     //NEO: block structure
                     {
                         int is1st = 0;//disable
-                        for (i = k + 1; i < ext_task->n; ++i) { // check overlapping seeds in the same chain
+                        for (i = k - 1; i >= 0; --i) { // check overlapping seeds in the same chain
                             ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
                             if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                             is1st=0;
