@@ -2638,7 +2638,7 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             cur_ptr->pre_score =  cur_ptr->score;
         }
         
-        ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+        ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
         
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
