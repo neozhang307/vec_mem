@@ -2692,11 +2692,12 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             sidx[i] = (uint64_t)ext_task->a[i].seed->score<<32|i;
         }
         mem_chain_v chnv = local_chnvs[batch_id];
-        uint64_t* sidx_ptr = sidx;
+        uint64_t* sidx_ptr = sidx+ext_task->n;
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
             const mem_chain_t*c =  &chnv.a[chain_id];
+            sidx_ptr-=c->n;
             ks_introsort_64(c->n, sidx_ptr);
-            sidx_ptr+=c->n;
+            
         }
 //        ks_introsort_64(ext_task->n, sidx);
         for(int k=ext_task->n-1;k>=0;--k)
