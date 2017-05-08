@@ -2678,7 +2678,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             
             for(int i=0; i<c->n; i++)
             {
-                sidx_ptr[i]=(uint64_t)ext_task->a[task_id].seed->score<<32|task_id;
+                
                 ext_info * ext_tmp = &ext_task->a[task_id];
                 ext_tmp->c = c;
                 if (ext_tmp->c->n == 0) return;
@@ -2687,6 +2687,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                 ext_tmp->chain_id = chain_id;
                 ext_tmp->seed_id = i;
                 ext_tmp->seed = &c->seeds[i];
+                sidx_ptr[i]=(uint64_t)ext_task->a[task_id].seed->score<<32|task_id;
                 task_id++;
                // ext_task_q[batch_id].a [task_id++].rmax=read_rmaxs[batch_id]+2*chain_id;
             }
@@ -2773,7 +2774,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                         }
                     }
                     if (bwa_verbose >= 4)
-                        printf("RESCURE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
+                        printf("RESCUE_MARK** Seed(%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", k);
                 }
                 
                 a = kv_pushp(mem_alnreg_t, *av);
