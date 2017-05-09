@@ -3270,7 +3270,10 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
                         
                         //NEO: block structure
                         int is1st=0;
-                        for (i = 0; i < k; ++i) { // check overlapping seeds in the same chain
+#ifdef FILTER_OPT 
+			is1st=1;
+#endif
+			for (i = 0; i < k; ++i) { // check overlapping seeds in the same chain
                             ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
                             if(cur_ext->chain_id!=pre_ext->chain_id)continue;
                             is1st=0;
