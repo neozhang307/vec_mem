@@ -1505,7 +1505,7 @@ void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
 #include<time.h>
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
-#ifdef SWBATCHDB
+#ifdef SWDB
     clock_t m_start,m_end;
 
     m_start = clock();
@@ -1637,7 +1637,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     //reference should be reverse
     //swlen_resize size is resize
     //construct RDB;
-#ifdef SWBATCHDB
+#ifdef SWDB
     clock_t start,end;
     start = clock();
 #endif
@@ -1651,7 +1651,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         uint8_t* db_ptr = rdb+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
         memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
     }
-#ifdef SWBATCHDB
+#ifdef SWDB
     end = clock();
     fprintf(stderr,"ref copy time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
 #endif
@@ -1668,7 +1668,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         }
     }
 #endif
-#ifdef SWBATCHDB
+#ifdef SWDB
     start = clock();
 #endif
     for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
@@ -1680,7 +1680,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         int y = ref_hash_t->alined;
         transpose_8(db_ptr, db_rev_ptr, x, y);
     }
-#ifdef SWBATCHDB
+#ifdef SWDB
     end = clock();
     fprintf(stderr,"ref transpose time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
 #endif
@@ -1702,7 +1702,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
 #endif
     int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*m*sizeof(int16_t));//should be usingned ,change in the future
     memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*m);
-#ifdef SWBATCHDB
+#ifdef SWDB
     start = clock();
 #endif
     for(int i=0; i<resize; i++)
@@ -1729,7 +1729,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
             for(;j<aligned; ++j) qp2[l++]=p[5];
         }
     }
-#ifdef SWBATCHDB
+#ifdef SWDB
     end = clock();
     fprintf(stderr,"qp execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
 #endif
@@ -1748,7 +1748,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     uint32_t remain = resize;
     uint32_t next_process = BATCHSIZE;
     //main
-#ifdef SWBATCHDB
+#ifdef SWDB
     start = clock();
 #endif
     for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
@@ -1816,7 +1816,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
             swlen_nxt_id++;
         }
     }
-#ifdef SWBATCHDB
+#ifdef SWDB
     end = clock();
     fprintf(stderr,"main execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
 #endif
@@ -1826,13 +1826,35 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     free(rdb_rev);
     free(swlen);
     free(qp_db);
-#ifdef SWBATCHDB
+#ifdef SWDB
     m_end = clock();
     fprintf(stderr,"total execution time:%f\n",(float)(m_end - m_start) / CLOCKS_PER_SEC);
 #endif
+
 }
-
-
+#include"ssw.h"
+void ksw_extend_batch_ssw(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+{
+    assert(o_del==o_ins);
+    assert(e_del==e_ins);
+    for(int i=0; i<size; i++)
+    {
+        swrst_t *sw = swrts+i;
+        swseq_t *seq = sw->sw_seq;
+        if(seq->qlen!=0)
+        {
+            int qlen = seq->qlen;
+            int tlen = seq->rlen;
+            const int8_t *query = (const int8_t *)seq->query;
+            const int8_t *target = (const int8_t *)seq->ref;
+            
+            int h0 = sw->h0;
+            
+            s_profile* profile = ssw_init(query, qlen, mat, 5, 2);
+            s_align* result = ssw_align(profile, target, tlen, o_del, e_del, 1, 0, 0, 15);
+        }
+    }
+}
 
 void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
@@ -2704,10 +2726,12 @@ int main()
     double rtime = realtime();
     size_t process_sze = nread;
     fprintf(stderr,"now try %ld\n",process_sze);
+    ksw_extend_batch_ssw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
+    fprintf(stderr, "[M::%s]ssw Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    rtime = realtime();
     ksw_extend_batch2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
-    
     //time
-    fprintf(stderr, "[M::%s] Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    fprintf(stderr, "[M::%s]simd Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
 
 //    swrst_t* rsrt;
 //    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
