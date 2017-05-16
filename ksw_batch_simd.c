@@ -2707,7 +2707,7 @@ double realtime()
     return tp.tv_sec + tp.tv_usec * 1e-6;
 }
 
-int main()
+int main(int argc, char** argv)
 {
      const int g_m = 5;
      int8_t g_mat[5][5];
@@ -2719,7 +2719,7 @@ int main()
     
     load_config(&g_mat[0][0], &g_o_del, &g_e_del, &g_o_ins, &g_e_ins, &g_zdrop);
     swrst_t* nsrt;
-    size_t nread = load(&nsrt,"sw_start_8000_0_2000.bin");
+    size_t nread = load(&nsrt, argv[1]);
     
     //time
     double ctime = cputime();
