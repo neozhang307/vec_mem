@@ -3017,6 +3017,84 @@ void seed_extension_batch_filter_opt1(const mem_opt_t *opt, const bntseq_t *bns,
                     if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
                     if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
                     // qd: distance ahead of the seed on query; rd: on reference
+                    if(s->qbeg>=p->qb&&s->rbeg>=p->rb&&s->qbeg+s->len<=p->qe&&s->rbeg+s->len<=p->re)
+                    {
+                        break;
+                    }
+                    
+//                    qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
+//                    max_gap = cal_max_gap(opt, qd < rd? qd : rd); // the maximal gap allowed in regions ahead of the seed
+//                    w = max_gap < p->w? max_gap : p->w; // bounded by the band width
+//                    if (qd - rd < w && rd - qd < w) break; // the seed is "around" a previous hit
+//                    // similar to the previous four lines, but this time we look at the region behind
+//                    qd = p->qe - (s->qbeg + s->len); rd = p->re - (s->rbeg + s->len);
+//                    max_gap = cal_max_gap(opt, qd < rd? qd : rd);
+//                    w = max_gap < p->w? max_gap : p->w;
+//                    if (qd - rd < w && rd - qd < w) break;
+                }
+                // NEO:
+                // rescue the seed marked as overlap, if it would lead to a different result
+                if (i < av->n) { // the seed is (almost) contained in an existing alignment; further testing is needed to confirm it is not leading to a different aln
+                    if (bwa_verbose >= 4)
+                        printf("DROP_MARK** Seed(%d,%d) [%ld;%ld,%ld] is almost contained in an existing alignment [%d,%d) <=> [%ld,%ld)\n",
+                               batch_id, k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
+                    
+                    //NEO: block structure
+                    int is1st=0;
+                    for (i = 0; i < k; ++i) { // check overlapping seeds in the same chain
+                        ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
+                        if(cur_ext->chain_id!=pre_ext->chain_id)continue;
+                        is1st=0;
+                        const mem_seed_t *t;
+                        
+                        if (sidx[i] == 0) continue;
+                        t =  ext_task->a[(uint32_t)sidx[i]].seed;;//&c->seeds[(uint32_t)srt[i]];
+                        if (t->len < s->len * .95) continue; // only check overlapping if t is long enough; TODO: more efficient by early stopping
+                        if (s->qbeg <= t->qbeg && s->qbeg + s->len - t->qbeg >= s->len>>2 && t->qbeg - s->qbeg != t->rbeg - s->rbeg) break;
+                        if (t->qbeg <= s->qbeg && t->qbeg + t->len - s->qbeg >= s->len>>2 && s->qbeg - t->qbeg != s->rbeg - t->rbeg) break;
+                    }
+                    
+                    if (is1st==0&&i == k) { // no overlapping seeds; then skip extension
+                        sidx[k] = 0; // mark that seed extension has not been performed
+                        continue;
+                    }
+                    if (bwa_verbose >= 4)
+                        printf("RESCUE_MARK** Seed(%d,%d) might lead to a different alignment even though it is contained. Extension will be performed.\n", batch_id, k);
+                }
+                if (bwa_verbose >= 4) err_printf("** ---> Extending from seed(%d,%d) [%ld;%ld,%ld] @ %s <---\n", batch_id, k,(long)s->len, (long)s->qbeg, (long)s->rbeg, bns->anns[cur_ext->c->rid].name);
+                kv_push(ext_info*,*nxt_process_pext,cur_ext);
+                ++process_seedid[batch_id];//the later break would dismiss the minus operation
+                break;
+            }
+        }
+    }
+}
+
+void seed_extension_batch_filter_opt2(const mem_opt_t *opt, const bntseq_t *bns, ext_vec* ext_task_q, int* process_seedid, uint64_t** sidxes, int batch, pext_vec* nxt_process_pext)
+{
+    for(int batch_id=0; batch_id<batch; batch_id++)//read
+    {
+        ext_vec* ext_task = ext_task_q+batch_id;
+        uint64_t* sidx = sidxes[batch_id];
+        //        if(process_seedid[batch_id]>=0)
+        for(;process_seedid[batch_id]<ext_task->n; ++process_seedid[batch_id])
+            //                for(;process_seedid[batch_id]>=0; --process_seedid[batch_id])
+        {
+            {
+                int k = process_seedid[batch_id];
+                ext_info * cur_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[k]];
+                int l_query = cur_ext->l_query;//l_seq;
+                const mem_seed_t *s = cur_ext->seed;//ext_task->a[(uint32_t)sidx[k]].seed;
+                mem_alnreg_v * av = cur_ext->av;
+                // Test if the seed is in future align
+                int i;
+                for (i = 0; i < av->n; ++i) { // test whether extension has been made before
+                    mem_alnreg_t *p = &av->a[i];
+                    int64_t rd;
+                    int qd, w, max_gap;
+                    if (s->rbeg < p->rb || s->rbeg + s->len > p->re || s->qbeg < p->qb || s->qbeg + s->len > p->qe) continue; // not fully contained
+                    if (s->len - p->seedlen0 > .1 * l_query) continue; // this seed may give a better alignment
+                    // qd: distance ahead of the seed on query; rd: on reference
                     qd = s->qbeg - p->qb; rd = s->rbeg - p->rb;
                     max_gap = cal_max_gap(opt, qd < rd? qd : rd); // the maximal gap allowed in regions ahead of the seed
                     w = max_gap < p->w? max_gap : p->w; // bounded by the band width
@@ -3035,7 +3113,7 @@ void seed_extension_batch_filter_opt1(const mem_opt_t *opt, const bntseq_t *bns,
                                batch_id, k, (long)s->len, (long)s->qbeg, (long)s->rbeg, av->a[i].qb, av->a[i].qe, (long)av->a[i].rb, (long)av->a[i].re);
                     
                     //NEO: block structure
-                    int is1st=0;
+                    int is1st=1;
                     for (i = 0; i < k; ++i) { // check overlapping seeds in the same chain
                         ext_info * pre_ext = &ext_task_q[batch_id].a[(uint32_t)sidx[i]];
                         if(cur_ext->chain_id!=pre_ext->chain_id)continue;
@@ -3374,7 +3452,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
     while(1)
     {
         //filtering
-        seed_extension_batch_filter(opt, bns, ext_task_q, process_seedid, sidxes, batch, &nxt_process_pext);
+        seed_extension_batch_filter_opt2(opt, bns, ext_task_q, process_seedid, sidxes, batch, &nxt_process_pext);
         if(nxt_process_pext.n==0)break;
         //Main SW
         seed_extension_simd_batch(opt, &nxt_process_pext);
