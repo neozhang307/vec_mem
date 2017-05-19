@@ -955,14 +955,14 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         
         //init w;
         __m128i tmpqlen = v_qlen;
-        int16_t minqlen;
-        __min_8(minqlen, tmpqlen);
+        int16_t maxqlen;
+        __max_8(maxqlen, tmpqlen);
         int l_w = w;
         
-        int max_ins = (int)((double)(minqlen * max_m + end_bonus - o_ins) / e_ins + 1.);
+        int max_ins = (int)((double)(maxqlen * max_m + end_bonus - o_ins) / e_ins + 1.);
         max_ins = max_ins > 1? max_ins : 1;
         
-        int max_del = (int)((double)(minqlen * max_m + end_bonus - o_del) / e_del + 1.);
+        int max_del = (int)((double)(maxqlen * max_m + end_bonus - o_del) / e_del + 1.);
         max_del = max_del > 1? max_del : 1;
         
         l_w = l_w < max_ins? l_w : max_ins;
@@ -2649,7 +2649,7 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
         ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
         
 //        ksw_extend_batchw_core2(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-        
+//        
 //        for(int i=0; i<size; i++)
 //        {
 //            fprintf(stderr, "gscore: m/c %d/%d\n",swrts[i].gscore,ano_swrts[i].gscore);
