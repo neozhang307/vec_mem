@@ -928,8 +928,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             qlens[process_batch_id]=tmp_quehash->len;
             tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
         }
-      //  maxqlen=que_hash->batch_max_len;
-       // maxtlen=ref_hash->batch_max_len;
+        maxqlen=que_hash->batch_max_len;
+        maxtlen=ref_hash->batch_max_len;
         v_qlen=_mm_load_si128((__m128i*)qlens);
         
         v_tlen=_mm_load_si128((__m128i*)tlens);
@@ -947,19 +947,16 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         v_h1 = v_zero;
         //seems inreducable
         __m128i v_h_l, v_m_l, v_mj_l;
-        int16_t min_beg, max_beg,  max_end;
+        int16_t min_beg, max_beg, min_end, max_end;
         /************************/
         
         v_end = v_qlen;
         v_beg = v_zero;
         
         //init w;
-        __m128i tmp = v_qlen;
-//        int16_t maxqlen;
-        __max_8(maxqlen, tmp);
-//        __m128i tmp = v_tlen;
-//        int16_t maxqlen;
-        __max_8(maxtlen, tmp);
+        __m128i tmpqlen = v_qlen;
+        int16_t maxqlen;
+        __max_8(maxqlen, tmpqlen);
         int l_w = w;
         
         int max_ins = (int)((double)(maxqlen * max_m + end_bonus - o_ins) / e_ins + 1.);
@@ -1110,25 +1107,25 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                     v_f = _mm_max_epi16(v_f, v_t);
                     
                     //should think about it
-//                    cond =_mm_cmplt_epi16(v_j, v_end);
-//                    //redo unneccesary search
-//                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-//                    cmp_gen_result(cond, v_h1, v_h_l, tmp_out_true, tmp_out_false, v_h_l);
-//                    cmp_gen_result(cond, v_m, v_m_l, tmp_out_true, tmp_out_false, v_m_l);
-//                    cmp_gen_result(cond, v_mj, v_mj_l, tmp_out_true, tmp_out_false, v_mj_l);
-//                    
+                    cond =_mm_cmplt_epi16(v_j, v_end);
+                    //redo unneccesary search
+                    cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                    cmp_gen_result(cond, v_h1, v_h_l, tmp_out_true, tmp_out_false, v_h_l);
+                    cmp_gen_result(cond, v_m, v_m_l, tmp_out_true, tmp_out_false, v_m_l);
+                    cmp_gen_result(cond, v_mj, v_mj_l, tmp_out_true, tmp_out_false, v_mj_l);
+                    
                     
                 }
                 v_j =_mm_set1_epi16(j);
                 
-//                v_m = v_m_l;
-//                v_mj = v_mj_l;
-//                v_h1 = v_h_l;
+                v_m = v_m_l;
+                v_mj = v_mj_l;
+                v_h1 = v_h_l;
                 
                 //redo unneccesary search
-//                cond = _mm_cmplt_epi16(_mm_set1_epi16(i), v_tlen);
-//                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
-//                cmp_gen_result(cond, v_h1, v_zero, tmp_out_true, tmp_out_false, v_h1);
+                cond = _mm_cmplt_epi16(_mm_set1_epi16(i), v_tlen);
+                cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+                cmp_gen_result(cond, v_h1, v_zero, tmp_out_true, tmp_out_false, v_h1);
                 
                 v_hs[j]=v_h1;
                 v_es[j]=v_zero;
@@ -1201,7 +1198,6 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
             }
             
-            int16_t min_end;
             v_tmp1 = v_end;
             __min_8(min_end,v_tmp1);
             v_tmp1 = v_end;
@@ -1227,12 +1223,12 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
             max_end = j;
-//            for(;LIKELY(j>max_beg); j--)
-//            {
-//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
-//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
-//            }
-//            min_end = j;
+            for(;LIKELY(j>max_beg); j--)
+            {
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+            }
+            min_end = j;
             v_tmp1 = _mm_set1_epi16(max_end+2);
             v_end = _mm_min_epi16(v_tmp1, v_qlen);
         }
@@ -2022,16 +2018,12 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     ks_introsort(uint64_t,size,swlen);
     
     int ptr = 0;
-    //pass zero
+    
     int threashold = 0;
     while(ptr<size&&(uint32_t)swlen[ptr]==0) ptr++;
-    //pass threashold
+    
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
-    //make sure full execute
-    if((size-ptr)%PROCESSBATCH>=4)
-        ptr+=(size-ptr)%PROCESSBATCH;
-//    fprintf(stderr,"%d/%d/%d\n",ptr,size,size-ptr);
     
     for(int i=none_zero; i<ptr; i++)
     {
