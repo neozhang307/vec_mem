@@ -947,7 +947,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         v_h1 = v_zero;
         //seems inreducable
         __m128i v_h_l, v_m_l, v_mj_l;
-        int16_t min_beg, max_beg, min_end, max_end;
+        int16_t min_beg, max_beg,  max_end;
         /************************/
         
         v_end = v_qlen;
@@ -1201,6 +1201,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
             }
             
+            int16_t min_end;
             v_tmp1 = v_end;
             __min_8(min_end,v_tmp1);
             v_tmp1 = v_end;
@@ -1226,12 +1227,12 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(_mm_movemask_ps(_mm_cmpneq_ps((__m128)v_es[j],(__m128)v_zero)))break;//any one not zero break
             }
             max_end = j;
-            for(;LIKELY(j>max_beg); j--)
-            {
-                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
-                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
-            }
-            min_end = j;
+//            for(;LIKELY(j>max_beg); j--)
+//            {
+//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_hs[j],(__m128)v_zero)))break;//all not zero break
+//                if(!_mm_movemask_ps(_mm_cmpeq_ps((__m128)v_es[j],(__m128)v_zero)))break;//all not zero break
+//            }
+//            min_end = j;
             v_tmp1 = _mm_set1_epi16(max_end+2);
             v_end = _mm_min_epi16(v_tmp1, v_qlen);
         }
