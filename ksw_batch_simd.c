@@ -2020,13 +2020,19 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     ks_introsort(uint64_t,size,swlen);
     
     int ptr = 0;
-    
+    //zero
     int threashold = 0;
     while(ptr<size&&(uint32_t)swlen[ptr]==0) ptr++;
     
+    //threashold_zero
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
     
+    if((size-ptr)%8<=4)
+    {
+        ptr+=(size-ptr)%8;
+    }
+    //fprintf(stderr,"%d,%d,%d\n",ptr,size,size-ptr);
     for(int i=none_zero; i<ptr; i++)
     {
         int idx = swlen[i]>>32;
@@ -2038,7 +2044,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     uint32_t resize_segs = (resize+BATCHSIZE-1)/BATCHSIZE;//skip zero ones
     uint32_t aligned_resize = resize_segs*BATCHSIZE;
     uint64_t *swlen_resized = swlen+ptr;
-    
+    if(resize==0)return;
     packed_hash_t* ref_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
     memset(ref_hash,0,sizeof(packed_hash_t)*aligned_resize);
     
