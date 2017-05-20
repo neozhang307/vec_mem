@@ -928,8 +928,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             qlens[process_batch_id]=tmp_quehash->len;
             tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
         }
-        maxqlen=que_hash->batch_max_len;
-        maxtlen=ref_hash->batch_max_len;
+//        maxqlen=que_hash->batch_max_len;
+//        maxtlen=ref_hash->batch_max_len;
         v_qlen=_mm_load_si128((__m128i*)qlens);
         
         v_tlen=_mm_load_si128((__m128i*)tlens);
@@ -954,9 +954,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         v_beg = v_zero;
         
         //init w;
-        __m128i tmpqlen = v_qlen;
-        int16_t maxqlen;
-        __max_8(maxqlen, tmpqlen);
+        __m128i tmplen = v_qlen;
+//        int16_t maxqlen;
+        __max_8(maxqlen, tmplen);
+        tmplen = v_tlen;
+        __max_8(maxtlen, tmplen);
         int l_w = w;
         
         int max_ins = (int)((double)(maxqlen * max_m + end_bonus - o_ins) / e_ins + 1.);
