@@ -928,8 +928,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             qlens[process_batch_id]=tmp_quehash->len;
             tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
         }
-        maxqlen=que_hash->batch_max_len;
-        maxtlen=ref_hash->batch_max_len;
+//        maxqlen=que_hash->batch_max_len;
+//        maxtlen=ref_hash->batch_max_len;
         v_qlen=_mm_load_si128((__m128i*)qlens);
         
         v_tlen=_mm_load_si128((__m128i*)tlens);
@@ -954,15 +954,17 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         v_beg = v_zero;
         
         //init w;
-        __m128i tmpqlen = v_qlen;
-        int16_t minqlen;
-        __min_8(minqlen, tmpqlen);
+        __m128i tmplen = v_qlen;
+//        int16_t maxqlen;
+        __max_8(maxqlen, tmplen);
+        tmplen = v_tlen;
+        __max_8(maxtlen, tmplen);
         int l_w = w;
         
-        int max_ins = (int)((double)(minqlen * max_m + end_bonus - o_ins) / e_ins + 1.);
+        int max_ins = (int)((double)(maxqlen * max_m + end_bonus - o_ins) / e_ins + 1.);
         max_ins = max_ins > 1? max_ins : 1;
         
-        int max_del = (int)((double)(minqlen * max_m + end_bonus - o_del) / e_del + 1.);
+        int max_del = (int)((double)(maxqlen * max_m + end_bonus - o_del) / e_del + 1.);
         max_del = max_del > 1? max_del : 1;
         
         l_w = l_w < max_ins? l_w : max_ins;
@@ -978,8 +980,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         //MAIN SW
         for (int16_t i = 0; LIKELY(i < maxtlen) ; ++i) {
             __m128i v_i = _mm_set1_epi16(i);
-            
             __m128i v_tmp1;
+            v_tmp1 = _mm_sub_epi16(v_tlen, _mm_set1_epi16(1));
+            v_i = _mm_min_epi16(v_i, v_tmp1);//should not be larger then tlen
+            
+            
             __m128i cond,cond2;
             __m128i truecase,falsecase;
             __m128i tmp_out_true,tmp_out_false;
@@ -1127,14 +1132,19 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 v_hs[j]=v_h1;
                 v_es[j]=v_zero;
                 
+             //   cond2 = _mm_cmpgt_epi16(v_j, v_qlen);
+               // cmp_int16flag_change(cond2, v_zero, cond, tmp_h, tmp_l);
                 v_j = _mm_min_epi16(v_j, v_end);
                 cond = _mm_cmpeq_epi16(v_j, v_qlen);// when false no change   j==qlen?
                 cmp_int16flag_change(cond, v_zero, cond, tmp_h, tmp_l);
+               // cond = (__m128i)_mm_andnot_ps((__m128)cond2, (__m128)cond);
                 cond2 = _mm_cmpgt_epi16(v_gscore, v_h1);// when false no change//v_gscore<v_h1?
                 // when true potentially change
                 cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
                 
                 cond = (__m128i)_mm_andnot_ps((__m128)cond2, (__m128)cond);
+                
+
                 
                 cmp_gen_result(cond, v_i, v_max_ie, tmp_out_true, tmp_out_false, v_max_ie);
                 cmp_gen_result(cond, v_h1, v_gscore, tmp_out_true, tmp_out_false, v_gscore);
@@ -2032,13 +2042,19 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     ks_introsort(uint64_t,size,swlen);
     
     int ptr = 0;
-    
+    //zero
     int threashold = 0;
     while(ptr<size&&(uint32_t)swlen[ptr]==0) ptr++;
     
+    //threashold_zero
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
     
+    if((size-ptr)%8<=4)
+    {
+        ptr+=(size-ptr)%8;
+    }
+    //fprintf(stderr,"%d,%d,%d\n",ptr,size,size-ptr);
     for(int i=none_zero; i<ptr; i++)
     {
         int idx = swlen[i]>>32;
@@ -2050,7 +2066,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     uint32_t resize_segs = (resize+BATCHSIZE-1)/BATCHSIZE;//skip zero ones
     uint32_t aligned_resize = resize_segs*BATCHSIZE;
     uint64_t *swlen_resized = swlen+ptr;
-    
+    if(resize==0)return;
     packed_hash_t* ref_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
     memset(ref_hash,0,sizeof(packed_hash_t)*aligned_resize);
     
@@ -2661,6 +2677,19 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
         }
         
         ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+        
+//        ksw_extend_batchw_core2(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+//        
+//        for(int i=0; i<size; i++)
+//        {
+//            fprintf(stderr, "gscore: m/c %d/%d\n",swrts[i].gscore,ano_swrts[i].gscore);
+//            fprintf(stderr, "gtle: m/c %d/%d\n",swrts[i].gtle,ano_swrts[i].gtle);
+//            fprintf(stderr, "max_off: m/c %d/%d\n",swrts[i].max_off,ano_swrts[i].max_off);
+//            fprintf(stderr, "qle: m/c %d/%d\n",swrts[i].qle,ano_swrts[i].qle);
+//            fprintf(stderr, "tle: m/c %d/%d\n",swrts[i].tle,ano_swrts[i].tle);
+//            fprintf(stderr, "score: m/c %d/%d\n",swrts[i].score,ano_swrts[i].score);
+//            assert(swrts[i].gtle==ano_swrts[i].gtle);
+//        }
         
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
