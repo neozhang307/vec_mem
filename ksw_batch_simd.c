@@ -818,8 +818,8 @@ void batch_sw_w_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    int16_t g_score[BATCHSIZE]
                    
                    )
-{
     
+{
     
 #define __max_8(ret, xx) do { \
 (xx) = _mm_max_epi16((xx), _mm_srli_si128((xx), 8)); \
@@ -1201,6 +1201,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
             }
             
+#ifndef NPROEND
+            
             v_tmp1 = v_end;
             __min_8(min_end,v_tmp1);
             v_tmp1 = v_end;
@@ -1234,6 +1236,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             min_end = j;
             v_tmp1 = _mm_set1_epi16(max_end+2);
             v_end = _mm_min_epi16(v_tmp1, v_qlen);
+#endif
         }
         __m128i v_tmp1;
         __m128i v_one = _mm_set1_epi16(1);
@@ -1547,9 +1550,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
     
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
-#ifdef SWBATCHDB
-    fprintf(stderr,"jump from %d to %d, while total size is%d\n",none_zero,ptr,size);
-#endif
+
     //    //sinple use sinple way
     for(int i=none_zero; i<ptr; i++)
     {
@@ -2052,10 +2053,10 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
     
-    if((size-ptr)%8<=4)
-    {
-        ptr+=(size-ptr)%8;
-    }
+//    if((size-ptr)%8<=4)
+//    {
+//        ptr+=(size-ptr)%8;
+//    }
     //fprintf(stderr,"%d,%d,%d\n",ptr,size,size-ptr);
     for(int i=none_zero; i<ptr; i++)
     {
@@ -2773,12 +2774,23 @@ int main(int argc, char** argv)
     rtime = realtime();
     ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,100, 3, g_zdrop);
     //time
-    fprintf(stderr, "[M::%s]simd with w Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    fprintf(stderr, "[M::%s]simd with w=100 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     rtime = realtime();
     ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,100, 3, g_zdrop);
     //time
-    fprintf(stderr, "[M::%s]original with w Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    fprintf(stderr, "[M::%s]original with w=100 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    
+    
+    rtime = realtime();
+    ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
+    //time
+    fprintf(stderr, "[M::%s]simd with w=250 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    
+    rtime = realtime();
+    ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
+    //time
+    fprintf(stderr, "[M::%s]original with w=250 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
 //    swrst_t* rsrt;
 //    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
