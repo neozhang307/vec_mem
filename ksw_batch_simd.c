@@ -735,7 +735,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(_mm_movemask_epi8(cond))flag=1;
                 
             }
-
+#ifndef NPROEND
             v_tmp1 = v_end;
             __min_8(min_end,v_tmp1);
             v_tmp1 = v_end;
@@ -769,6 +769,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             min_end = j;
             v_tmp1 = _mm_set1_epi16(max_end+2);
             v_end = _mm_min_epi16(v_tmp1, v_qlen);
+#endif
         }
         __m128i v_tmp1;
         __m128i v_one = _mm_set1_epi16(1);
