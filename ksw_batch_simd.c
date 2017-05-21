@@ -686,7 +686,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 cmp_gen_result(cond, v_h1, v_gscore, tmp_out_true, tmp_out_false, v_gscore);
             }
                 //if the search should terminated earlier?
-            uint8_t flag = 0;
+            uint8_t flag;
             
             //m==0 break
            
@@ -2296,65 +2296,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     free(qp_db);
 }
 
-void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
-{
-    assert(m==5);
-    
-    i_vec swrstid_cur,swrstid_nxt, swrstid_tmp;
-    swrstid_cur.a=malloc(sizeof(int)*size);
-    swrstid_cur.m=size;
-    swrstid_cur.n=0;
-    swrstid_nxt.a=malloc(sizeof(int)*size);
-    swrstid_nxt.m=size;
-    swrstid_nxt.n=0;
-    for(int i=0; i<size;++i)
-    {
-        swrst_t *sw = swrts+i;
-        swseq_t *seq = sw->sw_seq;
-        if(seq->qlen!=0)
-        {
-            sw->w=ini_w;
-            kv_push(int, swrstid_cur, i);
-//            swrstid_cur.a[swrstid_cur.n++]=i;
-        }
-    }
-    
-    for (int i = 0; i < MAX_BAND_TRY; ++i){
-        int w =ini_w << i;
-        
-        for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
-        {
-            swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
-            sw->pre_score = sw->score;
-        }
-        
-        ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
 
-        for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
-        {
-            swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
-       //     swseq_t *seq = sw->sw_seq;
-            if (!(sw->score ==  sw->pre_score || sw->max_off < (sw->w>>1) + (sw->w>>2)))
-            {
-          //      sw->w = ini_w << (i+1);
-#ifdef SWBATCHDB
-                fprintf(stderr,"pass of %d",i);
-#endif
-                kv_push(int,swrstid_nxt,swrstid_cur.a[sw_iter]);
-            }
-            else{//means finish
-                sw->w = w;
-            }
-            
-        }
-        swrstid_tmp=swrstid_nxt;
-        swrstid_nxt=swrstid_cur;
-        swrstid_cur=swrstid_tmp;
-        swrstid_nxt.n=0;
-    }
-    kv_destroy(swrstid_cur);
-    kv_destroy(swrstid_nxt);
-}
 void ksw_extend_batchw_core_prove_equal(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
 
     
@@ -2642,7 +2584,65 @@ void ksw_extend_batchw_core3(swrst_t* swrts, i_vec v_id, int m, const int8_t *ma
     ksw_extend_batchw_core_vector( swrts,  v_id,  m, mat, o_del, e_del,  o_ins,  e_ins,  w,   end_bonus,  zdrop);
     
 }
-
+void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
+{
+    assert(m==5);
+    
+    i_vec swrstid_cur,swrstid_nxt, swrstid_tmp;
+    swrstid_cur.a=malloc(sizeof(int)*size);
+    swrstid_cur.m=size;
+    swrstid_cur.n=0;
+    swrstid_nxt.a=malloc(sizeof(int)*size);
+    swrstid_nxt.m=size;
+    swrstid_nxt.n=0;
+    for(int i=0; i<size;++i)
+    {
+        swrst_t *sw = swrts+i;
+        swseq_t *seq = sw->sw_seq;
+        if(seq->qlen!=0)
+        {
+            sw->w=ini_w;
+            kv_push(int, swrstid_cur, i);
+            //            swrstid_cur.a[swrstid_cur.n++]=i;
+        }
+    }
+    
+    for (int i = 0; i < MAX_BAND_TRY; ++i){
+        int w =ini_w << i;
+        
+        for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
+        {
+            swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
+            sw->pre_score = sw->score;
+        }
+        
+        ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+        
+        for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
+        {
+            swrst_t *sw = swrts+swrstid_cur.a[sw_iter];
+            //     swseq_t *seq = sw->sw_seq;
+            if (!(sw->score ==  sw->pre_score || sw->max_off < (sw->w>>1) + (sw->w>>2)))
+            {
+                //      sw->w = ini_w << (i+1);
+#ifdef SWBATCHDB
+                fprintf(stderr,"pass of %d",i);
+#endif
+                kv_push(int,swrstid_nxt,swrstid_cur.a[sw_iter]);
+            }
+            else{//means finish
+                sw->w = w;
+            }
+            
+        }
+        swrstid_tmp=swrstid_nxt;
+        swrstid_nxt=swrstid_cur;
+        swrstid_cur=swrstid_tmp;
+        swrstid_nxt.n=0;
+    }
+    kv_destroy(swrstid_cur);
+    kv_destroy(swrstid_nxt);
+}
 void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
@@ -2772,23 +2772,23 @@ int main(int argc, char** argv)
     
     
     rtime = realtime();
-    ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,100, 3, g_zdrop);
+    ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,100, 3, g_zdrop);
     //time
     fprintf(stderr, "[M::%s]simd with w=100 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     rtime = realtime();
-    ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,100, 3, g_zdrop);
+    ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,100, 3, g_zdrop);
     //time
     fprintf(stderr, "[M::%s]original with w=100 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     
     rtime = realtime();
-    ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
+    ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
     //time
     fprintf(stderr, "[M::%s]simd with w=250 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     rtime = realtime();
-    ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
+    ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
     //time
     fprintf(stderr, "[M::%s]original with w=250 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
