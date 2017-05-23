@@ -569,6 +569,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             }
             transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
              __m128i v_i = _mm_set1_epi16(i);
+            v_i=_mm_min_epi16(v_i,v_tlen);
             /***********************/
             uint16_t j;
             {
