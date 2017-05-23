@@ -546,7 +546,13 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         /************************/
         //MAIN SW
         for (int16_t i = 0; LIKELY(i < maxtlen) ; ++i) {
+             __m128i v_i = _mm_set1_epi16(i);
+            
             __m128i v_tmp1;
+            v_tmp1 = _mm_sub_epi16(v_tlen, _mm_set1_epi16(1));
+            v_i = _mm_min_epi16(v_i,v_tmp1);//should not be larger then tlen
+            
+            
             __m128i cond,cond2;
             __m128i truecase,falsecase;
             __m128i tmp_out_true,tmp_out_false;
@@ -568,7 +574,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
             }
             transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
-             __m128i v_i = _mm_set1_epi16(i);
+            
             /***********************/
             uint16_t j;
             {
