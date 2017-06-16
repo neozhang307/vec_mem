@@ -326,7 +326,19 @@ static alignment_end* sw_sse2_byte (const int8_t* ref,
 	free(end_read_column);
 	return bests;
 }
-
+/*
+ rearange the sequence as follow:
+ NEO:
+ 1,  9, 17, 25,
+ 2, 10, 18, 26,
+ 3, 11, 19,  *,
+ 4, 12, 20,  *,
+ 5, 13, 21,  *,
+ 6, 14, 22,  *,
+ 7, 15, 23,  *,
+ 8, 16, 24,  *,
+ 
+ */
 static __m128i* qP_word (const int8_t* read_num,
 				  const int8_t* mat,
 				  const int32_t readLen,
