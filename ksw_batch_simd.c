@@ -1769,7 +1769,7 @@ void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8
             const int8_t *p = &mat[k*m];
             int j = 0;
             for (; j < qlen; ++j) qp2[l++] = p[query[j]];
-            for(;j<aligned; ++j) qp2[l++]=p[5];
+            for(;j<aligned; ++j) qp2[l++]=0;
         }
     }
     /*********************/
