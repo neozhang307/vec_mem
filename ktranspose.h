@@ -1,8 +1,8 @@
 #include <emmintrin.h>
 //transpose for 16bit ellement, the size should be a multiply of 8
-void transpose_16(int16_t*data_in, int16_t*data_out, int size_x, int size_y);
+void transpose_i16(int16_t*data_in, int16_t*data_out, int size_x, int size_y);
 //transpose for 16bit ellement, the size should be a multiply of 16
-void transpose_8(uint8_t*data_in, uint8_t*data_out, int size_x, int size_y);
+void transpose_u8(uint8_t*data_in, uint8_t*data_out, int size_x, int size_y);
 
 void transpose_8x8_hwords (__m128i w0, __m128i w1,
                            __m128i w2, __m128i w3,

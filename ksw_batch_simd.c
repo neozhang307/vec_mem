@@ -567,7 +567,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 qp_buff_nxt+=que_align;
                 
             }
-            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+            transpose_i16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
              __m128i v_i = _mm_set1_epi16(i);
             /***********************/
             uint16_t j;
@@ -1026,7 +1026,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 qp_buff_nxt+=que_align;
                 
             }
-            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+            transpose_i16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
             
             /***********************/
             uint16_t j;
@@ -1435,7 +1435,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
         int x = BATCHSIZE;
         int y = ref_hash_t->alined;
-        transpose_8(db_ptr, db_rev_ptr, x, y);
+        transpose_u8(db_ptr, db_rev_ptr, x, y);
     }
 #ifdef SWBATCHDB
     end = clock();
@@ -1603,7 +1603,7 @@ void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8
     assert(m==5);
     uint64_t* swlen = malloc(sizeof(int64_t)*v_id.n);//should record qlen rlen
     int size = v_id.n;
-  //  if(size==0)return;
+    if(size==0)return;
     for(uint32_t i=0; i<size; ++i)
     {
         int id = v_id.a[i];
@@ -1731,7 +1731,7 @@ void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8
         uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
         int x = BATCHSIZE;
         int y = ref_hash_t->alined;
-        transpose_8(db_ptr, db_rev_ptr, x, y);
+        transpose_u8(db_ptr, db_rev_ptr, x, y);
     }
     /**********************/
     //query profile
@@ -1856,7 +1856,266 @@ void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8
     free(rdb_rev);
     free(qp_db);
 }
+#define PROCESSBATCH16 16
 
+void ksw_extend_batchw_process_u8(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+    //sort
+    assert(m==5);
+    uint64_t* swlen = malloc(sizeof(int64_t)*v_id.n);//should record qlen rlen
+    int size = v_id.n;
+    if(size==0)return;
+    for(uint32_t i=0; i<size; ++i)
+    {
+        int id = v_id.a[i];
+        uint64_t tval=(uint64_t)(id)<<32;
+        swseq_t* tseq = swrts[id].sw_seq;
+        uint32_t qlen = tseq->qlen;
+        uint32_t mx=qlen;
+        tval|=mx;
+        swlen[i]=tval;
+    }
+    ks_introsort(uint64_t,size,swlen);
+    
+    int ptr = 0;
+    //zero
+    int threashold = 0;
+    while(ptr<size&&(uint32_t)swlen[ptr]==0) ptr++;
+    
+    //threashold_zero
+    int none_zero = ptr;
+    while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
+    
+    if((size-ptr)%PROCESSBATCH16<=PROCESSBATCH16/2)
+    {
+        ptr+=(size-ptr)%PROCESSBATCH16;
+    }
+    //fprintf(stderr,"%d,%d,%d\n",ptr,size,size-ptr);
+    for(int i=none_zero; i<ptr; i++)
+    {
+        int idx = swlen[i]>>32;
+        swrst_t *sw = swrts+idx;
+        swseq_t *seq = sw->sw_seq;
+        sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+    }
+    uint32_t resize = size-ptr;
+    uint32_t resize_segs = (resize+BATCHSIZE-1)/BATCHSIZE;//skip zero ones
+    uint32_t aligned_resize = resize_segs*BATCHSIZE;
+    uint64_t *swlen_resized = swlen+ptr;
+    if(resize==0)return;
+    packed_hash_t* ref_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
+    memset(ref_hash,0,sizeof(packed_hash_t)*aligned_resize);
+    
+    packed_hash_t* que_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
+    memset(que_hash,0,sizeof(packed_hash_t)*aligned_resize);
+    
+    
+    //init
+    int ref_global_id_x=0;
+    {
+        int ref_aligned_len=0;
+        int ref_global_batch_id = 0;
+        int rlen_max = 0;
+        for(int i=0; i<resize_segs; i++)
+        {
+            for(int j=0,k=i*BATCHSIZE; k<resize&&j<BATCHSIZE; j++,k++)
+            {
+                swrst_t *sw = swrts+(swlen_resized[k]>>32);
+                swseq_t *seq = sw->sw_seq;
+                int rlen = seq->rlen;
+                rlen_max = rlen_max>rlen?rlen_max:rlen;
+            }
+            ref_aligned_len = ((rlen_max+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
+            ref_global_batch_id = ref_global_id_x*BATCHSIZE;
+            for(int j=0; j<BATCHSIZE; j++)
+            {
+                packed_hash_t *cur_ref_hash = ref_hash+i*BATCHSIZE+j;
+                cur_ref_hash->local_id_y=j;
+                cur_ref_hash->global_batch_id=ref_global_batch_id;
+                cur_ref_hash->alined=ref_aligned_len;
+                cur_ref_hash->batch_max_len=rlen_max;
+            }
+            ref_global_id_x+=ref_aligned_len;
+        }
+    }
+    
+    int que_global_id_x=0;
+    {
+        int que_aligned_len=0;
+        int que_global_batch_id = 0;
+        int qlen_max = 0;
+        for(int i=0; i<resize_segs; i++)
+        {
+            for(int j=0,k=i*BATCHSIZE; k<resize&&j<BATCHSIZE; j++,k++)
+            {
+                swrst_t *sw = swrts+(swlen_resized[k]>>32);
+                swseq_t *seq = sw->sw_seq;
+                int qlen = seq->qlen;
+                qlen_max = qlen_max>qlen?qlen_max:qlen;
+            }
+            que_aligned_len = ((qlen_max+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
+            que_global_batch_id = que_global_id_x*BATCHSIZE;
+            
+            for(int j=0; j<BATCHSIZE; j++)
+            {
+                packed_hash_t *cur_que_hash = que_hash+i*BATCHSIZE+j;
+                cur_que_hash->local_id_y=j;
+                cur_que_hash->global_batch_id=que_global_batch_id;
+                cur_que_hash->alined=que_aligned_len;
+                cur_que_hash->batch_max_len=qlen_max;
+            }
+            que_global_id_x+=que_aligned_len;
+        }
+    }
+    /**********************/
+    //constructing reference
+    uint8_t* rdb = malloc(ref_global_id_x*BATCHSIZE);
+    uint8_t* rdb_rev = malloc(ref_global_id_x*BATCHSIZE);
+    memset(rdb,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    memset(rdb_rev,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* ref_hash_t = &ref_hash[i];
+        ref_hash_t->len=seq->rlen;
+        
+        uint8_t* db_ptr = rdb+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
+        memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
+    }
+    //reverse reference
+    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
+    {
+        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
+        uint8_t* db_ptr = rdb + ref_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
+        int x = BATCHSIZE;
+        int y = ref_hash_t->alined;
+        transpose_u8(db_ptr, db_rev_ptr, x, y);
+    }
+    /**********************/
+    //query profile
+    int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*m*sizeof(int16_t));//should be usingned ,change in the future
+    memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*m);
+    
+    int max_m=0;
+    int k = m * m;
+    {
+        int i=0;
+        for (max_m = 0; i < k; ++i) // get the max score
+            max_m = max_m > mat[i]? max_m : mat[i];
+    }
+#ifdef DEBUG
+    fprintf(stderr,"the mx m is %d/%d:%d\n",max_m,mat[0],m);
+#endif
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* que_hash_cur_ptr = &que_hash[i];
+        
+        que_hash_cur_ptr->len=seq->qlen;
+        //fprintf(stderr, "%d:%d ",seq->qlen,que_hash_cur_ptr->len);
+        
+        int qlen =seq->qlen;
+        //assert(qlen==1);
+        int aligned = que_hash_cur_ptr->alined;
+        
+        int16_t* qp2 = qp_db+m*(que_hash_cur_ptr->global_batch_id+que_hash_cur_ptr->local_id_y*que_hash_cur_ptr->alined);
+        
+        //fprintf(stderr,"check%d\n",qp2[0]);
+        const uint8_t* query =seq->query;
+        for (int k = 0, l = 0; k < m; ++k) {
+            const int8_t *p = &mat[k*m];
+            int j = 0;
+            for (; j < qlen; ++j) qp2[l++] = p[query[j]];
+            for(;j<aligned; ++j) qp2[l++]=p[5];
+        }
+    }
+    /*********************/
+    
+    uint64_t* swlen_batch_id = swlen_resized;//resize
+    packed_hash_t * ref_hash_batch_ptr = ref_hash;
+    packed_hash_t * que_hash_batch_ptr = que_hash;
+    uint64_t* swlen_nxt_id = swlen_resized;//resize
+    uint32_t remain = resize;
+    uint32_t next_process = BATCHSIZE;
+    for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
+    {
+        swlen_batch_id = swlen_resized+seg_idx* BATCHSIZE;
+        ref_hash_batch_ptr = ref_hash + seg_idx*BATCHSIZE;
+        que_hash_batch_ptr = que_hash + seg_idx*BATCHSIZE;
+        int16_t g_qle[BATCHSIZE];
+        int16_t g_tle[BATCHSIZE];
+        int16_t g_gtle[BATCHSIZE];
+        int16_t g_gscore[BATCHSIZE];
+        int16_t g_max_off[BATCHSIZE];
+        int16_t g_score[BATCHSIZE];
+        int16_t g_h0[BATCHSIZE];// = sw->h0;
+        swlen_nxt_id = swlen_batch_id;
+        //threoretically wont work
+        int batch_idx = 0;
+        next_process = remain<BATCHSIZE?remain:BATCHSIZE;
+#ifdef DEBUG
+        fprintf(stderr,"remaining: %d\n",remain);
+#endif
+        remain-=BATCHSIZE;
+        for(batch_idx=0; batch_idx<BATCHSIZE; batch_idx++)
+        {
+            g_h0[batch_idx] = 0;
+        }
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
+        {
+            swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
+            g_h0[batch_idx] = sw->h0;
+            swlen_nxt_id++;
+        }
+        //process 16 query at a time
+        batch_sw_w_core_i16(ref_hash_batch_ptr,que_hash_batch_ptr,
+                            rdb_rev,
+                            qp_db,
+                            g_h0,//input
+                            
+                            m,
+                            
+                            max_m,
+                            o_del,
+                            e_del,
+                            o_ins,
+                            e_ins,
+                            w,
+                            end_bonus,
+                            zdrop,
+                            
+                            g_qle,//result
+                            g_tle,
+                            g_gtle,
+                            g_gscore,
+                            g_max_off,
+                            g_score
+                            
+                            );
+        swlen_nxt_id = swlen_batch_id;
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
+        {
+            swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
+            sw->qle = g_qle[batch_idx];
+            sw->tle = g_tle[batch_idx];
+            sw->gtle = g_gtle[batch_idx];
+            sw->gscore = g_gscore[batch_idx];
+            sw->max_off = g_max_off[batch_idx];
+            sw->score = g_score[batch_idx];
+            swlen_nxt_id++;
+        }
+    }
+    
+    free(swlen);
+    free(ref_hash);
+    free(que_hash);
+    free(rdb);
+    free(rdb_rev);
+    free(qp_db);
+}
 
 void ksw_extend_batchw_core_prove_equal(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     
