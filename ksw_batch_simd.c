@@ -1640,9 +1640,9 @@ void ksw_extend_batchw_process(swrst_t* swrts, i_vec v_id, int m, const int8_t *
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
     
-    if((size-ptr)%8<=4)
+    if((size-ptr)%PROCESSBATCH<=PROCESSBATCH/2)
     {
-        ptr+=(size-ptr)%8;
+        ptr+=(size-ptr)%PROCESSBATCH;
     }
     //fprintf(stderr,"%d,%d,%d\n",ptr,size,size-ptr);
     for(int i=none_zero; i<ptr; i++)
