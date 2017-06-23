@@ -793,7 +793,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 }
 
 
-void batch_sw_w_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
+void batch_sw_w_core_16i(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
@@ -1598,7 +1598,7 @@ typedef struct
 }i_vec;
 //v_id would indicate the value's needed to be extend in swrts, which should not be zero.
 //main process of extention of batch of seed with w parameter
-void ksw_extend_batchw_process(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+void ksw_extend_batchw_process_16i(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
 //    int mod_size = v_id.n%16;
 //    if(mod_size!=0&&mod_size < 8)
 //    {
@@ -1826,7 +1826,7 @@ void ksw_extend_batchw_process(swrst_t* swrts, i_vec v_id, int m, const int8_t *
             swlen_nxt_id++;
         }
         //process 16 query at a time
-        batch_sw_w_core(ref_hash_batch_ptr,que_hash_batch_ptr,
+        batch_sw_w_core_16i(ref_hash_batch_ptr,que_hash_batch_ptr,
                       rdb_rev,
                       qp_db,
                       g_h0,//input
@@ -1863,17 +1863,6 @@ void ksw_extend_batchw_process(swrst_t* swrts, i_vec v_id, int m, const int8_t *
             swlen_nxt_id++;
         }
     }
-    
-    
-//    for(int sw_iter=0; sw_iter<resize;++sw_iter)
-//    {
-//        swrst_t *sw = swrts+(swlen[sw_iter]>>32);
-//        swseq_t *seq = sw->sw_seq;
-//        
-//        sw->pre_score = sw->score;
-//        
-//        sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-//    }
     
     free(swlen);
     free(ref_hash);
@@ -2195,7 +2184,7 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             cur_ptr->pre_score =  cur_ptr->score;
         }
         
-        ksw_extend_batchw_process(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+        ksw_extend_batchw_process_16i(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
         
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
