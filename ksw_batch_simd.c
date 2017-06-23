@@ -2158,7 +2158,7 @@ void ksw_extend_batchw_core_scalar(swrst_t* swrts, i_vec v_id, int m, const int8
     }
 }
 
-
+//make sure the w value works
 void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
