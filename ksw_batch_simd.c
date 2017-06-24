@@ -573,8 +573,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 qp_buff_nxt+=que_align;
                 
             }
-            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
-            
+
+            transpose_i16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+           
             /***********************/
             uint16_t j;
             {
@@ -800,7 +801,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 }
 
 
-void batch_sw_w_core(packed_hash_t* ref_hash, packed_hash_t* que_hash,
+void batch_sw_w_core_i16(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                    uint8_t* rdb_rev,
                    int16_t* qp_db,
                    int16_t g_h0[BATCHSIZE],//input
@@ -877,9 +878,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     int16_t* qp_buff_rev = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
     memset(qp_buff_rev,0,sizeof(int16_t)*PROCESSBATCH*que_align);
     
-    uint16_t qlens[8];
+    uint16_t qlens[PROCESSBATCH];
     uint16_t maxqlen=0;
-    uint16_t tlens[8];
+    uint16_t tlens[PROCESSBATCH];
     uint16_t maxtlen=0;
     __m128i v_qlen, v_tlen;//no smaller
     
@@ -900,14 +901,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
         
         const int16_t *qp_batch = qp_db +m*que_batch_global_id;
-        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
+        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*PROCESSBATCH*que_align;
         
         //process 8 query at a time for int16_t
         v_h0=_mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
-        //        if(_mm_movemask_epi8(_mm_cmplt_ps((__m128)v_h0, (__m128)v_zero))!=0)//v_h0>0
-        //        {
-        //
-        //        }
+
         assert(_mm_movemask_epi8(_mm_cmplt_epi16(v_h0, v_zero))==0);//all v_h0 > 0
         __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
@@ -1033,7 +1031,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 qp_buff_nxt+=que_align;
                 
             }
-            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
+            transpose_i16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
             
             /***********************/
             uint16_t j;
@@ -1049,6 +1047,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
                 const  int16_t *q_rev = qp_buff_rev;
                 // compute the first column
+                // consider the existance of w( 100) in this statement i would be no larger than 100.
                 if ( min_beg == 0) {
                     __m128i tval = _mm_set1_epi16((o_del + e_del * (i + 1)));
                     v_h1 = _mm_subs_epu16(v_h0,tval);
@@ -1267,260 +1266,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 }
 
 
-void batch_sw_core2(packed_hash_t* ref_hash, packed_hash_t* que_hash,
-                    uint8_t* rdb_rev,
-                    int16_t* qp_db,
-                    int16_t g_h0[BATCHSIZE],//input
-                   
-                    int m,
-                    
-                    int o_del,
-                    int e_del,
-                    int o_ins,
-                    int e_ins,
-                    int zdrop,
-                   
-                    int16_t g_qle[BATCHSIZE],//result
-                    int16_t g_tle[BATCHSIZE],
-                    int16_t g_gtle[BATCHSIZE],
-                    int16_t g_gscore[BATCHSIZE],
-                    int16_t g_max_off[BATCHSIZE],
-                    int16_t g_score[BATCHSIZE]
-                   
-                   )
-{
-    
-    int16_t oe_del = o_del + e_del, oe_ins = o_ins + e_ins;
-    int que_align = que_hash->alined;
 
-    size_t ref_batch_global_id = ref_hash->global_batch_id;
-    size_t que_batch_global_id = que_hash->global_batch_id;
-    
-    int16_t* qp_buff = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
-    memset(qp_buff,0,sizeof(int16_t)*PROCESSBATCH*que_align);
-    int16_t* qp_buff_rev = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
-    memset(qp_buff_rev,0,sizeof(int16_t)*PROCESSBATCH*que_align);
-    
-    for(int grid_process_batch_idx=0; grid_process_batch_idx<BATCHSIZE/PROCESSBATCH;grid_process_batch_idx++)
-    {
-        const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
- 
-        const int16_t *qp_batch = qp_db +m*que_batch_global_id;
-        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
-        
-        //process 8 query at a time for int16_t
-        uint16_t qlens[8];
-        uint16_t maxqlen=0;
-        uint16_t tlens[8];
-        uint16_t maxtlen=0;
-        
-        eh_m **ehs=malloc(sizeof(eh_m*)*(que_align + 1));
-        for(int i=0; i<que_align+1;i++)
-        {
-            ehs[i]=calloc(sizeof(eh_m)*8,1);
-        }
-        int16_t begs[8], ends[8];
-        int16_t maxs[8], max_is[8], max_js[8], max_ies[8], gscores[9], max_offs[8];
-        int16_t h0s[8];
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-        {
-            h0s[process_batch_id]=g_h0[process_batch_id+grid_process_batch_idx*8];
-            assert( h0s[process_batch_id] >= 0);
-        }
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-        {
-            ehs[0][process_batch_id].h=h0s[process_batch_id];
-            ehs[1][process_batch_id].h=h0s[process_batch_id]>oe_ins?h0s[process_batch_id]-oe_ins:0;
-            for (int j = 2; j <= que_align && ehs[j-1][process_batch_id].h > e_ins; ++j)
-                ehs[j][process_batch_id].h = ehs[j-1][process_batch_id].h - e_ins;
-        }
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-        {
-           // hash_t *tmphash =db_hash_nxt_id+process_batch_id+grid_process_batch_idx*8;
-            packed_hash_t * tmp_quehash = que_hash+process_batch_id+grid_process_batch_idx*8;
-            packed_hash_t * tmp_refhash = ref_hash+process_batch_id+grid_process_batch_idx*8;
-            qlens[process_batch_id]=tmp_quehash->len;
-            maxqlen=maxqlen>tmp_quehash->len?maxqlen:tmp_quehash->len;
-            
-            tlens[process_batch_id]=tmp_refhash->len;//tmphash->rlen;
-            maxtlen=tmp_refhash->batch_max_len;//maxtlen>tmphash->rlen?maxtlen:tmphash->rlen;
-        }
-        for(int process_batch_id=0; process_batch_id<8; process_batch_id++)
-        {
-            int batch_idx = process_batch_id + grid_process_batch_idx*8;
-            h0s[process_batch_id]=g_h0[batch_idx];
-            maxs[process_batch_id]=h0s[process_batch_id];
-            max_is[process_batch_id]=-1;
-            max_js[process_batch_id]=-1;
-            max_ies[process_batch_id]=-1;
-            gscores[process_batch_id]=-1;
-            max_offs[process_batch_id]=0;
-        }
-
-        int16_t ts[8], fs[8] , h1s[8], ms[8], mjs[8];
-        int16_t h_ls[8], m_ls[8], mj_ls[8];
-        int16_t min_beg, max_end;
-        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-        {
-            begs[process_batch_id]=0;
-            ends[process_batch_id]=qlens[process_batch_id];
-
-        }
-            //MAIN SW
-        uint8_t break_flag = 0;
-        for (int16_t i = 0; LIKELY(i < maxtlen) && break_flag==0; ++i) {
-            min_beg = begs[0];
-            max_end = ends[0];
-            for(int i=1; i<8; i++){
-                int16_t tbeg = begs[i];
-                int16_t tend = ends[i];
-                min_beg = min_beg<tbeg?min_beg:tbeg;
-                max_end = max_end>tend?max_end:tend;
-            }
-            
- 
-            uint8_t t_targets[8];
-            memcpy(t_targets,target_rev_batch+i*BATCHSIZE + grid_process_batch_idx*8,8*sizeof(uint8_t));
-            int16_t* qp_buff_nxt = qp_buff;
-            for(int process_batch_id=0; process_batch_id<PROCESSBATCH; process_batch_id++)
-            {
-             
-                int qp_ptr2 = process_batch_id*m*que_align+t_targets[process_batch_id] * que_align;
-                
-                memcpy(qp_buff_nxt, qp_batch_nxt+qp_ptr2, que_align*sizeof(int16_t));
-                qp_buff_nxt+=que_align;
-
-            }
-            transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,que_align);
-            //transpose_16(qp_buff,qp_buff_rev,PROCESSBATCH,align_end);
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-            {
-                /***********************/
-                
-                int16_t j;
-
-                fs[process_batch_id]=0;
-                ms[process_batch_id]=0;
-                mjs[process_batch_id]=-1;
-                h_ls[process_batch_id]=0;
-                m_ls[process_batch_id]=0;
-                mj_ls[process_batch_id]=0;
-                
-
-                /***********************/
-
-                const  int16_t *q_rev = qp_buff_rev;
-                // compute the first column
-                if ( min_beg == 0) {
-                    h1s[process_batch_id] = h0s[process_batch_id] - (o_del + e_del * (i + 1));
-                    if (h1s[process_batch_id] < 0) h1s[process_batch_id] = 0;
-                } else h1s[process_batch_id] = 0;
-                //processing a row
-                for (j =  min_beg; LIKELY(j < max_end); ++j) {
-                    // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
-                    // Similar to SSE2-SW, cells are computed in the following order:
-                    //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
-                    //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
-                    //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
-
-                    int16_t h;
-                    int16_t M = ehs[j][process_batch_id].h;
-                    int16_t e = ehs[j][process_batch_id].e; // get H(i-1,j-1) and E(i-1,j)
-                    
-                    ehs[j][process_batch_id].h = h1s[process_batch_id];          // set H(i,j-1) for the next row
-                    
-                    M = M? M + q_rev[process_batch_id+j*PROCESSBATCH] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
-                    
-                    h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
-                    h = h > fs[process_batch_id]? h : fs[process_batch_id];
-                    h1s[process_batch_id] = h;             // save H(i,j) to h1 for the next column
-                    mjs[process_batch_id] = ms[process_batch_id] > h?  mjs[process_batch_id] : j; // record the position where max score is achieved
-                    ms[process_batch_id] = ms[process_batch_id] > h? ms[process_batch_id] : h;   // m is stored at eh[mj+1]
-                    ts[process_batch_id] = M - oe_del;
-                    ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
-                    e -= e_del;
-                    e = e > ts[process_batch_id]? e : ts[process_batch_id];   // computed E(i+1,j)
-                    ehs[j][process_batch_id].e = e;           // save E(i+1,j) for the next row
-                    ts[process_batch_id] = M - oe_ins;
-                    ts[process_batch_id] = ts[process_batch_id] > 0? ts[process_batch_id] : 0;
-                    fs[process_batch_id] -= e_ins;
-                    fs[process_batch_id] = fs[process_batch_id] > ts[process_batch_id]? fs[process_batch_id] : ts[process_batch_id];   // computed F(i,j+1)
-                    //record last h1, m, mj
-                    h_ls[process_batch_id]=j<ends[process_batch_id]?h1s[process_batch_id]:h_ls[process_batch_id];
-                    m_ls[process_batch_id]=j<ends[process_batch_id]?ms[process_batch_id]: m_ls[process_batch_id];
-                    mj_ls[process_batch_id]=j<ends[process_batch_id]? mjs[process_batch_id]:mj_ls[process_batch_id];
-                }
-                j=j<ends[process_batch_id]?j:ends[process_batch_id];
-                h1s[process_batch_id]=h_ls[process_batch_id];
-                ms[process_batch_id]= m_ls[process_batch_id];
-                mjs[process_batch_id]=mj_ls[process_batch_id];
-                h1s[process_batch_id]=i<tlens[process_batch_id]?h1s[process_batch_id]:0;
-                ehs[ends[process_batch_id]][process_batch_id].h = h1s[process_batch_id]; ehs[ends[process_batch_id]][process_batch_id].e = 0;
-                if (j == qlens[process_batch_id]) {
-                    max_ies[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? max_ies[process_batch_id] : i;
-                    gscores[process_batch_id] = gscores[process_batch_id] > h1s[process_batch_id]? gscores[process_batch_id] : h1s[process_batch_id];
-                }
-            }
-            //if the search should terminated earlier?
-            uint8_t flag = 0;
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-            {
-                // if (ms[process_batch_id] == 0) break;
-                if(ms[process_batch_id]!=0)
-                    flag=1;
-                if (ms[process_batch_id] > maxs[process_batch_id]) {
-                    maxs[process_batch_id] = ms[process_batch_id], max_is[process_batch_id] = i, max_js[process_batch_id] =  mjs[process_batch_id];
-                    max_offs[process_batch_id] = max_offs[process_batch_id] > abs( mjs[process_batch_id] - i)? max_offs[process_batch_id] : abs( mjs[process_batch_id] - i);
-                } else if (zdrop > 0) {
-                    if (i - max_is[process_batch_id] >  mjs[process_batch_id] - max_js[process_batch_id]) {
-                        //if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id] - ((i - max_is[process_batch_id]) - ( mjs[process_batch_id] - max_js[process_batch_id])) * e_del <= zdrop) flag=1;
-                    } else {
-                        //if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-                        if (maxs[process_batch_id] - ms[process_batch_id]- (( mjs[process_batch_id] - max_js[process_batch_id]) - (i - max_is[process_batch_id])) * e_ins <= zdrop) flag=1;
-                    }
-                }
-            }
-            if(flag==0)
-                break_flag=1;
-
-            for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-            {
-                int16_t j;
-                for (j = begs[process_batch_id]; LIKELY(j < ends[process_batch_id]) && ehs[j][process_batch_id].h == 0 && ehs[j][process_batch_id].e == 0; ++j);
-                begs[process_batch_id]=j;
-                for (j = ends[process_batch_id]; LIKELY(j >= begs[process_batch_id]) && ehs[j][process_batch_id].h == 0 && ehs[j][process_batch_id].e == 0; --j);
-                ends[process_batch_id] = j + 2 < qlens[process_batch_id]? j + 2 : qlens[process_batch_id];
-          //  fprintf(stderr,"zdrop is %d\n",zdrop);
-                // update beg and end for the next round
-                //                    for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
-                //                    beg = j;
-                //                    for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
-                //                    end = j + 2 < qlen? j + 2 : qlen;
-                //beg = 0; end = qlen; // uncomment this line for debugging
-            }
-        }
-        for(int process_batch_id = 0; process_batch_id<8; process_batch_id++)
-        {
-            g_qle[process_batch_id + grid_process_batch_idx*8] = max_js[process_batch_id]+1;
-            g_tle[process_batch_id + grid_process_batch_idx*8] = max_is[process_batch_id]+1;
-            g_gtle[process_batch_id + grid_process_batch_idx*8] = max_ies[process_batch_id]+1;
-            g_gscore[process_batch_id + grid_process_batch_idx*8] = gscores[process_batch_id];
-            g_max_off[process_batch_id + grid_process_batch_idx*8] = max_offs[process_batch_id];
-            g_score[process_batch_id + grid_process_batch_idx*8] = maxs[process_batch_id];
-            //db_hash_nxt_id++;
-            
-        }
-        
-        for(int i=0; i<que_align+1;i++)
-        {
-            free(ehs[i]);//=calloc(sizeof(eh_m)*8,1);
-        }
-        free(ehs);
-    }
-    free(qp_buff);
-    free(qp_buff_rev);
-}
 /**************/
 #include<time.h>
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
@@ -1696,7 +1442,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
         uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
         int x = BATCHSIZE;
         int y = ref_hash_t->alined;
-        transpose_8(db_ptr, db_rev_ptr, x, y);
+        transpose_u8(db_ptr, db_rev_ptr, x, y);
     }
 #ifdef SWDB
     end = clock();
@@ -1850,6 +1596,7 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
 #endif
 
 }
+
 #ifdef SWBATCHDB
 #include"ssw.h"
 void ksw_extend_batch_ssw(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
@@ -1875,6 +1622,8 @@ void ksw_extend_batch_ssw(swrst_t* swrts, uint32_t size, int m, const int8_t *ma
     }
 }
 #endif
+
+//original no search space optimization
 void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
     //sort
@@ -2008,7 +1757,6 @@ void ksw_extend_batch(swrst_t* swrts, size_t size, int m, const int8_t *mat, int
 }
 
 
-
 #define MAX_BAND_TRY 2
 #include"kvec.h"
 typedef struct
@@ -2017,27 +1765,13 @@ typedef struct
     int * a;
 }i_vec;
 //v_id would indicate the value's needed to be extend in swrts, which should not be zero.
-void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
-//    int mod_size = v_id.n%16;
-//    if(mod_size!=0&&mod_size < 8)
-//    {
-//        int sw_iter = (v_id.n/16)*16;
-//        for(; sw_iter<v_id.n;++sw_iter)
-//        {
-//            swrst_t *sw = swrts+v_id.a[sw_iter];
-//            swseq_t *seq = sw->sw_seq;
-//            
-//            sw->pre_score = sw->score;
-//            
-//            sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-//        }
-//        v_id.n-=mod_size;
-//    }
-    
+//main process of extention of batch of seed with w parameter
+void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     //sort
     assert(m==5);
     uint64_t* swlen = malloc(sizeof(int64_t)*v_id.n);//should record qlen rlen
     int size = v_id.n;
+    if(size==0)return;
     for(uint32_t i=0; i<size; ++i)
     {
         int id = v_id.a[i];
@@ -2059,10 +1793,10 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     int none_zero = ptr;
     while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
     
-//    if((size-ptr)%8<=4)
-//    {
-//        ptr+=(size-ptr)%8;
-//    }
+    if((size-ptr)%PROCESSBATCH<=PROCESSBATCH/2)
+    {
+        ptr+=(size-ptr)%PROCESSBATCH;
+    }
     //fprintf(stderr,"%d,%d,%d\n",ptr,size,size-ptr);
     for(int i=none_zero; i<ptr; i++)
     {
@@ -2165,7 +1899,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
         uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
         int x = BATCHSIZE;
         int y = ref_hash_t->alined;
-        transpose_8(db_ptr, db_rev_ptr, x, y);
+        transpose_u8(db_ptr, db_rev_ptr, x, y);
     }
     /**********************/
     //query profile
@@ -2203,7 +1937,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
             const int8_t *p = &mat[k*m];
             int j = 0;
             for (; j < qlen; ++j) qp2[l++] = p[query[j]];
-            for(;j<aligned; ++j) qp2[l++]=p[5];
+            for(;j<aligned; ++j) qp2[l++]=0;
         }
     }
     /*********************/
@@ -2245,7 +1979,7 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
             swlen_nxt_id++;
         }
         //process 16 query at a time
-        batch_sw_w_core(ref_hash_batch_ptr,que_hash_batch_ptr,
+        batch_sw_w_core_i16(ref_hash_batch_ptr,que_hash_batch_ptr,
                       rdb_rev,
                       qp_db,
                       g_h0,//input
@@ -2283,17 +2017,6 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
         }
     }
     
-    
-//    for(int sw_iter=0; sw_iter<resize;++sw_iter)
-//    {
-//        swrst_t *sw = swrts+(swlen[sw_iter]>>32);
-//        swseq_t *seq = sw->sw_seq;
-//        
-//        sw->pre_score = sw->score;
-//        
-//        sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
-//    }
-    
     free(swlen);
     free(ref_hash);
     free(que_hash);
@@ -2301,153 +2024,11 @@ void ksw_extend_batchw_core(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat
     free(rdb_rev);
     free(qp_db);
 }
+#define PROCESSBATCH16 16
 
 
-void ksw_extend_batchw_core_prove_equal(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
 
-    
-    for(int process_id=0; process_id<v_id.n; process_id++)
-    {
-        swrst_t *cur_ptr = &swrts[v_id.a[process_id]];
-        swseq_t *cur_seq = cur_ptr->sw_seq;
-        swrst_t another;
-        swrst_t *another_ptr = &another;
-        memcpy(another_ptr,cur_ptr,sizeof(swrst_t));
-        
-        cur_ptr->score = ksw_extend2(cur_seq->qlen, cur_seq->query, cur_seq->rlen, cur_seq->ref, m, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop, cur_ptr->h0, &cur_ptr->qle, &cur_ptr->tle, &cur_ptr->gtle, &cur_ptr->gscore, &cur_ptr->max_off);
-//        int ksw_extend2(int qlen, const uint8_t *query, int tlen, const uint8_t *target, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w, int end_bonus, int zdrop, int h0, int *_qle, int *_tle, int *_gtle, int *_gscore, int *_max_off)
-        {
-            swrst_t* cur_ptr = another_ptr;
-            int qlen = cur_seq->qlen;
-            const uint8_t *query = cur_seq->query;
-            int tlen = cur_seq->rlen;
-            const uint8_t *target = cur_seq->ref;
-            int h0 = cur_ptr->h0;
-            eh_m *eh; // score array
-            int8_t *qp; // query profile
-            int i, j, k, oe_del = o_del + e_del, oe_ins = o_ins + e_ins, beg, end, max, max_i, max_j, max_ins, max_del, max_ie, gscore, max_off;
-            assert(h0 > 0);
-            // allocate memory
-            qp = malloc(qlen * m);
-            eh = calloc(qlen + 1, 8);
-            // generate the query profile
-            for (k = i = 0; k < m; ++k) {
-                const int8_t *p = &mat[k * m];
-                for (j = 0; j < qlen; ++j) qp[i++] = p[query[j]];
-            }
-            // fill the first row
-            eh[0].h = h0; eh[1].h = h0 > oe_ins? h0 - oe_ins : 0;
-            for (j = 2; j <= qlen && eh[j-1].h > e_ins; ++j)
-                eh[j].h = eh[j-1].h - e_ins;
-            // adjust $w if it is too large
-            k = m * m;
-            for (i = 0, max = 0; i < k; ++i) // get the max score
-                max = max > mat[i]? max : mat[i];
-            max_ins = (int)((double)(qlen * max + end_bonus - o_ins) / e_ins + 1.);
-            max_ins = max_ins > 1? max_ins : 1;
-            w = w < max_ins? w : max_ins;
-            max_del = (int)((double)(qlen * max + end_bonus - o_del) / e_del + 1.);
-            max_del = max_del > 1? max_del : 1;
-            w = w < max_del? w : max_del; // TODO: is this necessary?
-            // DP loop
-            max = h0, max_i = max_j = -1; max_ie = -1, gscore = -1;
-            max_off = 0;
-            beg = 0, end = qlen;
-            for (i = 0; LIKELY(i < tlen); ++i) {
-                int t, f = 0, h1, m = 0, mj = -1;
-                int8_t *q = &qp[target[i] * qlen];
-                // apply the band and the constraint (if provided)
-                if (beg < i - w) beg = i - w;
-                if (end > i + w + 1) end = i + w + 1;
-                if (end > qlen) end = qlen;
-                // compute the first column
-                if (beg == 0) {
-                    h1 = h0 - (o_del + e_del * (i + 1));
-                    if (h1 < 0) h1 = 0;
-                } else h1 = 0;
-                for (j = beg; LIKELY(j < end); ++j) {
-                    // At the beginning of the loop: eh[j] = { H(i-1,j-1), E(i,j) }, f = F(i,j) and h1 = H(i,j-1)
-                    // Similar to SSE2-SW, cells are computed in the following order:
-                    //   H(i,j)   = max{H(i-1,j-1)+S(i,j), E(i,j), F(i,j)}
-                    //   E(i+1,j) = max{H(i,j)-gapo, E(i,j)} - gape
-                    //   F(i,j+1) = max{H(i,j)-gapo, F(i,j)} - gape
-                    eh_m *p = &eh[j];
-                    int h, M = p->h, e = p->e; // get H(i-1,j-1) and E(i-1,j)
-                    p->h = h1;          // set H(i,j-1) for the next row
-                    M = M? M + q[j] : 0;// separating H and M to disallow a cigar like "100M3I3D20M"
-                    h = M > e? M : e;   // e and f are guaranteed to be non-negative, so h>=0 even if M<0
-                    h = h > f? h : f;
-                    h1 = h;             // save H(i,j) to h1 for the next column
-                    mj = m > h? mj : j; // record the position where max score is achieved
-                    m = m > h? m : h;   // m is stored at eh[mj+1]
-                    t = M - oe_del;
-                    t = t > 0? t : 0;
-                    e -= e_del;
-                    e = e > t? e : t;   // computed E(i+1,j)
-                    p->e = e;           // save E(i+1,j) for the next row
-                    t = M - oe_ins;
-                    t = t > 0? t : 0;
-                    f -= e_ins;
-                    f = f > t? f : t;   // computed F(i,j+1)
-                }
-                eh[end].h = h1; eh[end].e = 0;
-                if (j == qlen) {
-                    max_ie = gscore > h1? max_ie : i;
-                    gscore = gscore > h1? gscore : h1;
-                }
-                if (m == 0) break;
-                if (m > max) {
-                    max = m, max_i = i, max_j = mj;
-                    max_off = max_off > abs(mj - i)? max_off : abs(mj - i);
-                } else if (zdrop > 0) {
-                    if (i - max_i > mj - max_j) {
-                        if (max - m - ((i - max_i) - (mj - max_j)) * e_del > zdrop) break;
-                    } else {
-                        if (max - m - ((mj - max_j) - (i - max_i)) * e_ins > zdrop) break;
-                    }
-                }
-                // update beg and end for the next round
-                for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
-                beg = j;
-                for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
-                end = j + 2 < qlen? j + 2 : qlen;
-                //beg = 0; end = qlen; // uncomment this line for debugging
-            }
-            free(eh); free(qp);
-            int qle = max_j + 1;
-            int tle = max_i + 1;
-            int gtle = max_ie + 1;
-//            if (_gscore) *_gscore = gscore;
-//            if (_max_off) *_max_off = max_off;
-//            return max;
-            cur_ptr->qle = qle;
-            cur_ptr->tle = tle;
-            cur_ptr->gtle = gtle;
-            cur_ptr->gscore = gscore;
-            cur_ptr->max_off = max_off;
-            cur_ptr->score = max;
-        }
-        
-        int correct = 1;
-        if(another_ptr->score!=cur_ptr->score)correct = 0;
-        if(another_ptr->qle!=cur_ptr->qle)correct = 0;
-        if(another_ptr->tle!=cur_ptr->tle)correct = 0;
-        if(another_ptr->gtle!=cur_ptr->gtle)correct = 0;
-        if(another_ptr->gscore!=cur_ptr->gscore)correct = 0;
-        if(another_ptr->max_off!=cur_ptr->max_off)correct = 0;
-        
-        if(correct==0)
-        {
-            fprintf(stderr,"score c/m:%d/%d\n",cur_ptr->score,another_ptr->score);
-            fprintf(stderr,"qle c/m:%d/%d\n",cur_ptr->qle,another_ptr->qle);
-            fprintf(stderr,"tle c/m:%d/%d\n",cur_ptr->tle,another_ptr->tle);
-            fprintf(stderr,"gtle c/m:%d/%d\n",cur_ptr->gtle,another_ptr->gtle);
-            fprintf(stderr,"gscore c/m:%d/%d\n",cur_ptr->gscore,another_ptr->gscore);
-            fprintf(stderr,"max_off c/m:%d/%d\n",cur_ptr->max_off,another_ptr->max_off);
-        }
-        assert(correct==1);
-    }
-}
+
 void ksw_extend_batchw_core_vector(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     
     
@@ -2579,17 +2160,6 @@ void ksw_extend_batchw_core_scalar(swrst_t* swrts, i_vec v_id, int m, const int8
 }
 
 
-void ksw_extend_batchw_core2(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
-    
-    ksw_extend_batchw_core_scalar( swrts,  v_id,  m, mat, o_del, e_del,  o_ins,  e_ins,  w,   end_bonus,  zdrop);
-    
- }
-
-void ksw_extend_batchw_core3(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
-    
-    ksw_extend_batchw_core_vector( swrts,  v_id,  m, mat, o_del, e_del,  o_ins,  e_ins,  w,   end_bonus,  zdrop);
-    
-}
 void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
@@ -2622,7 +2192,7 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
             sw->pre_score = sw->score;
         }
         
-        ksw_extend_batchw_core2(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+        ksw_extend_batchw_core_scalar(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
         
         for(int sw_iter=0; sw_iter<swrstid_cur.n;++sw_iter)
         {
@@ -2649,6 +2219,8 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
     kv_destroy(swrstid_cur);
     kv_destroy(swrstid_nxt);
 }
+
+//make sure the w value works
 void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
@@ -2685,20 +2257,7 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             cur_ptr->pre_score =  cur_ptr->score;
         }
         
-        ksw_extend_batchw_core(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-        
-//        ksw_extend_batchw_core2(ano_swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
-//        
-//        for(int i=0; i<size; i++)
-//        {
-//            fprintf(stderr, "gscore: m/c %d/%d\n",swrts[i].gscore,ano_swrts[i].gscore);
-//            fprintf(stderr, "gtle: m/c %d/%d\n",swrts[i].gtle,ano_swrts[i].gtle);
-//            fprintf(stderr, "max_off: m/c %d/%d\n",swrts[i].max_off,ano_swrts[i].max_off);
-//            fprintf(stderr, "qle: m/c %d/%d\n",swrts[i].qle,ano_swrts[i].qle);
-//            fprintf(stderr, "tle: m/c %d/%d\n",swrts[i].tle,ano_swrts[i].tle);
-//            fprintf(stderr, "score: m/c %d/%d\n",swrts[i].score,ano_swrts[i].score);
-//            assert(swrts[i].gtle==ano_swrts[i].gtle);
-//        }
+        ksw_extend_batchw_process_i16(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
         
         for(int process_id=0; process_id<swrstid_cur.n; process_id++)
         {
@@ -2710,6 +2269,7 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
             cur_ptr->w=w;
             kv_push(int,swrstid_nxt,swrstid_cur.a[process_id]);
         }
+        if(swrstid_cur.n==0)break;
         swrstid_tmp=swrstid_nxt;
         swrstid_nxt=swrstid_cur;
         swrstid_cur=swrstid_tmp;

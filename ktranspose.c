@@ -170,7 +170,7 @@ inline void transpose_4x4_dwords (__m128i w0, __m128i w1,
     *r3 = (__m128i)_mm_shuffle_ps ((__m128)x1,(__m128) x3, _MM_SHUFFLE( 3, 1, 3, 1));//3 7 11 15
 }
 
-void transpose_16(int16_t*data_in, int16_t*data_out, int size_x, int size_y)
+void transpose_i16(int16_t*data_in, int16_t*data_out, int size_x, int size_y)
 {
     __m128i*data_in_ori= (__m128i*)data_in;
     __m128i*data_out_ori=(__m128i*)data_out;
@@ -219,7 +219,7 @@ void transpose_16(int16_t*data_in, int16_t*data_out, int size_x, int size_y)
         }
     }
 }
-void transpose_8(uint8_t*data_in, uint8_t*data_out, int size_x, int size_y)
+void transpose_u8(uint8_t*data_in, uint8_t*data_out, int size_x, int size_y)
 {
     __m128i*data_in_ori= (__m128i*)data_in;
     __m128i*data_out_ori=(__m128i*)data_out;

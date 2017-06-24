@@ -25,10 +25,10 @@ typedef struct
  @para gtle when the alignment reaches the end 
  @para maxoff, max offset(seems): the max offset (of i and j) among all the SW score
  */
-void ksw_extend_batch(swrst_t* swrts, size_t size,int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
+//void ksw_extend_batch(swrst_t* swrts, size_t size,int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size,int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop);
 
-void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop);
+//void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop);
 void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop);
 
 
