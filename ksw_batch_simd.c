@@ -2349,14 +2349,14 @@ int main(int argc, char** argv)
     
     
     rtime = realtime();
-    ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
+    ksw_extend_batchw2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,200, 3, g_zdrop);
     //time
-    fprintf(stderr, "[M::%s]simd with w=250 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    fprintf(stderr, "[M::%s]simd with w=200 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     rtime = realtime();
-    ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,250, 3, g_zdrop);
+    ksw_extend_batchw(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,200, 3, g_zdrop);
     //time
-    fprintf(stderr, "[M::%s]original with w=250 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
+    fprintf(stderr, "[M::%s]original with w=200 Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
 //    swrst_t* rsrt;
 //    size_t rread = load(&rsrt,"sw_end_8000_0_2000.bin");
