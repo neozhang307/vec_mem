@@ -870,9 +870,9 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     int16_t* qp_buff_rev = malloc(sizeof(int16_t)*PROCESSBATCH*que_align);
     memset(qp_buff_rev,0,sizeof(int16_t)*PROCESSBATCH*que_align);
     
-    uint16_t qlens[8];
+    uint16_t qlens[PROCESSBATCH];
     uint16_t maxqlen=0;
-    uint16_t tlens[8];
+    uint16_t tlens[PROCESSBATCH];
     uint16_t maxtlen=0;
     __m128i v_qlen, v_tlen;//no smaller
     
@@ -893,14 +893,11 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
         const uint8_t *target_rev_batch =  rdb_rev+ref_batch_global_id;
         
         const int16_t *qp_batch = qp_db +m*que_batch_global_id;
-        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*8*que_align;
+        const int16_t *qp_batch_nxt = qp_batch + m*grid_process_batch_idx*PROCESSBATCH*que_align;
         
         //process 8 query at a time for int16_t
         v_h0=_mm_load_si128(((__m128i*)g_h0)+grid_process_batch_idx);
-        //        if(_mm_movemask_epi8(_mm_cmplt_ps((__m128)v_h0, (__m128)v_zero))!=0)//v_h0>0
-        //        {
-        //
-        //        }
+
         assert(_mm_movemask_epi8(_mm_cmplt_epi16(v_h0, v_zero))==0);//all v_h0 > 0
         __m128i *v_hs = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
         __m128i *v_es = calloc(sizeof(__m128i)*(que_align+1),1);//can be smaller
@@ -1042,6 +1039,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
                 const  int16_t *q_rev = qp_buff_rev;
                 // compute the first column
+                // consider the existance of w( 100) in this statement i would be no larger than 100.
                 if ( min_beg == 0) {
                     __m128i tval = _mm_set1_epi16((o_del + e_del * (i + 1)));
                     v_h1 = _mm_subs_epu16(v_h0,tval);
