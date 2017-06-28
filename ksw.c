@@ -670,10 +670,10 @@ int ksw_extend2_mod_unopt(int qlen, const uint8_t *query, int tlen, const uint8_
             }
         }
         // update beg and end for the next round
-        for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
-        beg = j;
-        for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
-        end = j + 2 < qlen? j + 2 : qlen;
+//        for (j = beg; LIKELY(j < end) && eh[j].h == 0 && eh[j].e == 0; ++j);
+//        beg = j;
+//        for (j = end; LIKELY(j >= beg) && eh[j].h == 0 && eh[j].e == 0; --j);
+//        end = j + 2 < qlen? j + 2 : qlen;
         beg = 0; end = qlen; // uncomment this line for debugging
     }
     free(eh); free(qp);
