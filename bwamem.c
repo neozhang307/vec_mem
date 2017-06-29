@@ -3145,7 +3145,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
             mem_chain_t *p = &chnv.a[chain_id];
             int l_query = l_seq;
             const mem_chain_t*c = p;
-            
+           if(c->n==0)continue; 
             int64_t *rmax = chnv_rmaxs+2*chain_id;
             int i; // aw: actual bandwidth used in extension
             int64_t l_pac = bns->l_pac, max = 0;
@@ -3191,6 +3191,7 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
             const mem_chain_t*c =  &chnv.a[chain_id];
+           if(c->n==0)continue; 
             for(int i=0; i<c->n; i++)
             {
                 ext_info * ext_tmp = &ext_task->a[task_id];
@@ -3310,7 +3311,8 @@ void seed_extension_batch(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t
         free(read_rmaxs[batch_id]);
         uint8_t** chnv_rseqs = read_rseqs[batch_id];
         for (int chain_id = 0; chain_id < chnv.n; ++chain_id) {
-            free(chnv_rseqs[chain_id]);
+        	if(chnv.a[chain_id].n==0)continue;
+	    free(chnv_rseqs[chain_id]);
         }
         free(chnv_rseqs);
         free(sidxes[batch_id]);
