@@ -3378,6 +3378,50 @@ static void worker1_batch(void *data, int start, int batch, int tid)
     //finalize
 
 }
+
+
+
+
+static void worker1_batch_chain(void *data, int start, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    
+    //chaining
+    chainging_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, w->local_chnvs+start);
+    
+    //extension
+    seed_extension_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, w->local_chnvs+start, w->local_regvs+start);
+    
+    //post extension
+    post_extensiong_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, batch, w->local_regvs+start, w->regs+start);
+
+}
+
+
+static void worker1_batch_extend(void *data, int start, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    
+
+    //extension
+    seed_extension_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, w->local_chnvs+start, w->local_regvs+start);
+    
+
+    
+}
+
+static void worker1_batch_post_extend(void *data, int start, int batch, int tid)
+{
+    worker_t_mod *w = (worker_t_mod*)data;
+    
+    
+    //post extension
+    post_extensiong_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, batch, w->local_regvs+start, w->regs+start);
+    
+    
+    //finalize
+    
+}
 /*********************************************************/
 /*********************************************************/
 /*this function is modified by Lingqi Zhang*/
@@ -3421,8 +3465,13 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     w.local_chnvs = malloc(sizeof(mem_chain_v)*n);
     w.local_regvs = malloc(sizeof(mem_alnreg_v)*n);
     
-    kt_for_batch2(opt->n_threads, batch_size, worker1_batch, &w, n);
+    kt_for_batch2(opt->n_threads, batch_size, worker1_batch_chain, &w, n);
+    double ext_time = realtime();
     
+    kt_for_batch2(opt->n_threads, batch_size, worker1_batch_extend, &w, n);
+    ext_time = realtime()-ext_time;
+    
+    kt_for_batch2(opt->n_threads, batch_size, worker1_batch_post_extend, &w, n);
     for(int i=0; i<n; i++)
     {
         mem_chain_v chn = w.local_chnvs[i];
@@ -3456,7 +3505,12 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 //        free(w.regs[i].a);
 //    }
     free(w.regs);
+    
 	if (bwa_verbose >= 3)
-		fprintf(stderr, "[M::%s] Processed %d reads in %.3f CPU sec, %.3f real sec\n", __func__, n, cputime() - ctime, realtime() - rtime);
+    {
+        fprintf(stderr, "[M::%s] %d reads extension process costs %.3f real sec\n", __func__, n,ext_time);
+        fprintf(stderr, "[M::%s] Processed %d reads in %.3f CPU sec, %.3f real sec\n", __func__, n, cputime() - ctime, realtime() - rtime);
+        
+    }
 }
 /*********************************************************/
