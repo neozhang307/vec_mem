@@ -1811,7 +1811,8 @@ typedef struct {
     bseq1_t *seqs;
     mem_alnreg_v *regs;
   //  mem_chain_v *chn;//to do set to thread private
-    
+    mem_chain_v *local_chnvs;
+    mem_alnreg_v *local_regvs;
    // qext_t* ext_val;// to do set to thread private
     
     int64_t n_processed;
@@ -3353,8 +3354,7 @@ static void worker1_batch(void *data, int start, int batch, int tid)
 {
     worker_t_mod *w = (worker_t_mod*)data;
     
-    mem_chain_v *local_chnvs = malloc(sizeof(mem_chain_v)*batch);
-    mem_alnreg_v *local_regvs = malloc(sizeof(mem_alnreg_v)*batch);
+
     /*
      NEO:
      local_chnnvs saved chains for batch of reads.
@@ -3366,27 +3366,17 @@ static void worker1_batch(void *data, int start, int batch, int tid)
      */
     
     //chaining
-    chainging_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs);
+    chainging_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, w->local_chnvs+start);
     
     //extension
-    seed_extension_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, local_chnvs, local_regvs);
+    seed_extension_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, w->aux[tid],  batch, w->local_chnvs+start, w->local_regvs+start);
     
     //post extension
-    post_extensiong_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, batch, local_regvs, w->regs+start);
+    post_extensiong_batch(w->opt, w->bwt, w->bns, w->pac, w->seqs+start, batch, w->local_regvs+start, w->regs+start);
     
     
     //finalize
-    for(int i=start, j=0; j<batch; j++,i++)
-    {
-        mem_chain_v chn = local_chnvs[j];
-        
-        for (int i = 0; i < chn.n; ++i) {
-            free(chn.a[i].seeds);
-        }
-        free(chn.a);
-    }
-    free(local_chnvs);
-    free(local_regvs);
+
 }
 /*********************************************************/
 /*********************************************************/
@@ -3427,8 +3417,23 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     //fprintf(stderr,"=====> size of swrst_t is %ld   <=====\n", sizeof(swrst_t));
     fprintf(stderr,"=====> Processing %d batchs of read <=====\n", n);
     fprintf(stderr,"=====> Processing %d batchs of read iner <=====\n", batch_size);
+    
+    w.local_chnvs = malloc(sizeof(mem_chain_v)*n);
+    w.local_regvs = malloc(sizeof(mem_alnreg_v)*n);
+    
     kt_for_batch2(opt->n_threads, batch_size, worker1_batch, &w, n);
     
+    for(int i=0; i<n; i++)
+    {
+        mem_chain_v chn = w.local_chnvs[i];
+        
+        for (int i = 0; i < chn.n; ++i) {
+            free(chn.a[i].seeds);
+        }
+        free(chn.a);
+    }
+    free(w.local_chnvs);
+    free(w.local_regvs);
   //  free(w.ext_val);
 #ifdef DEBUG
     printcount();
