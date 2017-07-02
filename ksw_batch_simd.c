@@ -1685,6 +1685,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
 
 /**************/
 #include<time.h>
+//sort + cache
 void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
 #ifdef SWDB
@@ -2012,7 +2013,340 @@ void ksw_extend_batch2(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, 
 #endif
 
 }
-void ksw_extend_batch2_unopt(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+//cache
+void ksw_extend_batch2_nosort(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+{
+#ifdef SWDB
+    clock_t m_start,m_end;
+    
+    m_start = clock();
+#endif
+    //sort
+    assert(m==5);
+    assert(size>=0);
+    uint64_t* swlen = malloc(sizeof(int64_t)*size);//should record qlen rlen
+    for(uint32_t i=0; i<size; ++i)
+    {
+        uint64_t tval=(uint64_t)i<<32;
+        swseq_t* tseq = swrts[i].sw_seq;
+        uint32_t qlen = tseq->qlen;
+        //       uint32_t rlen = tseq->rlen;
+        //        uint32_t mx = qlen>rlen?qlen:rlen;
+        uint32_t mx=qlen;
+        tval|=mx;
+        swlen[i]=tval;
+    }
+ //   ks_introsort(uint64_t,size,swlen);
+#ifdef DEBUG_SW
+    assert((uint32_t)swlen[0]==0);
+#endif
+    int ptr = 0;
+    
+    int threashold = 0;
+    while((uint32_t)swlen[ptr]==0&&ptr<size) ptr++;
+    
+    int none_zero = ptr;
+    while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
+    
+    //    //sinple use sinple way
+    for(int i=none_zero; i<ptr; i++)
+    {
+        int idx = swlen[i]>>32;
+        swrst_t *sw = swrts+idx;
+        swseq_t *seq = sw->sw_seq;
+        sw->score = ksw_extend2_mod(seq->qlen, seq->query, seq->rlen,seq->ref, m, mat, o_del, e_del, o_ins, e_ins, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+    }
+    //
+    
+    //recompute space size
+    //uint8_t batch = BATCHSIZE;//16 | 8
+    
+    uint32_t resize = size-ptr;
+    uint32_t resize_segs = (resize+BATCHSIZE-1)/BATCHSIZE;//skip zero ones
+    uint32_t aligned_resize = resize_segs*BATCHSIZE;
+    uint64_t *swlen_resized = swlen+ptr;
+    
+    packed_hash_t* ref_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
+    memset(ref_hash,0,sizeof(packed_hash_t)*aligned_resize);
+    
+    packed_hash_t* que_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
+    memset(que_hash,0,sizeof(packed_hash_t)*aligned_resize);
+    
+    
+    //init
+    int ref_global_id_x=0;
+    {
+        int ref_aligned_len=0;
+        int ref_global_batch_id = 0;
+        int rlen_max = 0;
+        for(int i=0; i<resize_segs; i++)
+        {
+            for(int j=0,k=i*BATCHSIZE; k<resize&&j<BATCHSIZE; j++,k++)
+            {
+                swrst_t *sw = swrts+(swlen_resized[k]>>32);
+                swseq_t *seq = sw->sw_seq;
+                int rlen = seq->rlen;
+                rlen_max = rlen_max>rlen?rlen_max:rlen;
+            }
+            ref_aligned_len = ((rlen_max+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
+            ref_global_batch_id = ref_global_id_x*BATCHSIZE;
+            for(int j=0; j<BATCHSIZE; j++)
+            {
+                packed_hash_t *cur_ref_hash = ref_hash+i*BATCHSIZE+j;
+                cur_ref_hash->local_id_y=j;
+                cur_ref_hash->global_batch_id=ref_global_batch_id;
+                cur_ref_hash->alined=ref_aligned_len;
+                cur_ref_hash->batch_max_len=rlen_max;
+            }
+            ref_global_id_x+=ref_aligned_len;
+        }
+    }
+    
+    int que_global_id_x=0;
+    {
+        int que_aligned_len=0;
+        int que_global_batch_id = 0;
+        int qlen_max = 0;
+        for(int i=0; i<resize_segs; i++)
+        {
+            for(int j=0,k=i*BATCHSIZE; k<resize&&j<BATCHSIZE; j++,k++)
+            {
+                swrst_t *sw = swrts+(swlen_resized[k]>>32);
+                swseq_t *seq = sw->sw_seq;
+                int qlen = seq->qlen;
+                qlen_max = qlen_max>qlen?qlen_max:qlen;
+            }
+            que_aligned_len = ((qlen_max+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
+            que_global_batch_id = que_global_id_x*BATCHSIZE;
+            
+            
+            for(int j=0; j<BATCHSIZE; j++)
+            {
+                packed_hash_t *cur_que_hash = que_hash+i*BATCHSIZE+j;
+                cur_que_hash->local_id_y=j;
+                cur_que_hash->global_batch_id=que_global_batch_id;
+                cur_que_hash->alined=que_aligned_len;
+                cur_que_hash->batch_max_len=qlen_max;
+                //                fprintf(stderr,"global_batch_id %ld, local_id_y %d, align %d , batch_max_len %d \n", cur_que_hash->global_batch_id,cur_que_hash->local_id_y,cur_que_hash->alined, cur_que_hash->batch_max_len);
+            }
+            que_global_id_x+=que_aligned_len;
+        }
+    }
+    
+    
+    
+    uint8_t* rdb = malloc(ref_global_id_x*BATCHSIZE);
+    uint8_t* rdb_rev = malloc(ref_global_id_x*BATCHSIZE);
+    memset(rdb,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    memset(rdb_rev,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    
+    //copy reference to db
+    
+    /***********************/
+    //reference should be reverse
+    //swlen_resize size is resize
+    //construct RDB;
+#ifdef SWDB
+    clock_t start,end;
+    start = clock();
+#endif
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* ref_hash_t = &ref_hash[i];
+        ref_hash_t->len=seq->rlen;
+        
+        uint8_t* db_ptr = rdb+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
+        memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
+    }
+#ifdef SWDB
+    end = clock();
+    fprintf(stderr,"ref copy time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+#endif
+#ifdef DEBUG_SW
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* ref_hash_t = &ref_hash[i];
+        uint8_t* db_ptr = rdb+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
+        for(int j=0; j<seq->rlen; j++)
+        {
+            assert(seq->ref[j]==db_ptr[j]);
+        }
+    }
+#endif
+#ifdef SWDB
+    start = clock();
+#endif
+    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
+    {
+        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
+        uint8_t* db_ptr = rdb + ref_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
+        int x = BATCHSIZE;
+        int y = ref_hash_t->alined;
+        transpose_u8(db_ptr, db_rev_ptr, x, y);
+    }
+#ifdef SWDB
+    end = clock();
+    fprintf(stderr,"ref transpose time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+#endif
+#ifdef DEBUG_SW
+    {
+        packed_hash_t* rdb_hash_t = &ref_hash[1*BATCHSIZE];
+        uint8_t* db_ptr = rdb + rdb_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr = rdb_rev + rdb_hash_t->global_batch_id;
+        int size_x = BATCHSIZE;
+        int size_y = rdb_hash_t->alined;
+        for(int id_x=0; id_x<size_x; id_x++)
+        {
+            for(int id_y=0; id_y<size_y; id_y++)
+            {
+                assert(db_ptr[id_x*size_y+id_y]==db_rev_ptr[id_x+size_x*id_y]);
+            }
+        }
+    }
+#endif
+    int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*m*sizeof(int16_t));//should be usingned ,change in the future
+    memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*m);
+#ifdef SWDB
+    start = clock();
+#endif
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* que_hash_cur_ptr = &que_hash[i];
+        
+        que_hash_cur_ptr->len=seq->qlen;
+        //fprintf(stderr, "%d:%d ",seq->qlen,que_hash_cur_ptr->len);
+        
+        int qlen =seq->qlen;
+        //assert(qlen==1);
+        int aligned = que_hash_cur_ptr->alined;
+        
+        int16_t* qp2 = qp_db+m*(que_hash_cur_ptr->global_batch_id+que_hash_cur_ptr->local_id_y*que_hash_cur_ptr->alined);
+        
+        //fprintf(stderr,"check%d\n",qp2[0]);
+        const uint8_t* query =seq->query;
+        for (int k = 0, l = 0; k < m; ++k) {
+            const int8_t *p = &mat[k*m];
+            int j = 0;
+            for (; j < qlen; ++j) qp2[l++] = p[query[j]];
+            for(;j<aligned; ++j) qp2[l++]=p[5];
+        }
+    }
+#ifdef SWDB
+    end = clock();
+    fprintf(stderr,"qp execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+#endif
+    //
+    
+    /************************/
+    //  for(int i=ptr; i<size;++i)
+    
+    
+    
+    
+    uint64_t* swlen_batch_id = swlen_resized;//resize
+    packed_hash_t * ref_hash_batch_ptr = ref_hash;
+    packed_hash_t * que_hash_batch_ptr = que_hash;
+    uint64_t* swlen_nxt_id = swlen_resized;//resize
+    uint32_t remain = resize;
+    uint32_t next_process = BATCHSIZE;
+    //main
+#ifdef SWDB
+    start = clock();
+#endif
+    for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
+    {
+        swlen_batch_id = swlen_resized+seg_idx* BATCHSIZE;
+        ref_hash_batch_ptr = ref_hash + seg_idx*BATCHSIZE;
+        que_hash_batch_ptr = que_hash + seg_idx*BATCHSIZE;
+        int16_t g_qle[BATCHSIZE];
+        int16_t g_tle[BATCHSIZE];
+        int16_t g_gtle[BATCHSIZE];
+        int16_t g_gscore[BATCHSIZE];
+        int16_t g_max_off[BATCHSIZE];
+        int16_t g_score[BATCHSIZE];
+        int16_t g_h0[BATCHSIZE];// = sw->h0;
+        swlen_nxt_id = swlen_batch_id;
+        //threoretically wont work
+        int batch_idx = 0;
+        next_process = remain<BATCHSIZE?remain:BATCHSIZE;
+#ifdef DEBUG
+        fprintf(stderr,"remaining: %d\n",remain);
+#endif
+        remain-=BATCHSIZE;
+        for(batch_idx=0; batch_idx<BATCHSIZE; batch_idx++)
+        {
+            g_h0[batch_idx] = 0;
+        }
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
+        {
+            swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
+            g_h0[batch_idx] = sw->h0;
+            swlen_nxt_id++;
+        }
+        //process 16 query at a time
+        batch_sw_core(ref_hash_batch_ptr,que_hash_batch_ptr,
+                      rdb_rev,
+                      qp_db,
+                      g_h0,//input
+                      
+                      m,
+                      
+                      o_del,
+                      e_del,
+                      o_ins,
+                      e_ins,
+                      zdrop,
+                      
+                      g_qle,//result
+                      g_tle,
+                      g_gtle,
+                      g_gscore,
+                      g_max_off,
+                      g_score
+                      
+                      );
+        swlen_nxt_id = swlen_batch_id;
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
+        {
+            swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
+            sw->qle = g_qle[batch_idx];
+            sw->tle = g_tle[batch_idx];
+            sw->gtle = g_gtle[batch_idx];
+            sw->gscore = g_gscore[batch_idx];
+            sw->max_off = g_max_off[batch_idx];
+            sw->score = g_score[batch_idx];
+            swlen_nxt_id++;
+        }
+    }
+#ifdef SWDB
+    end = clock();
+    fprintf(stderr,"main execution time:%f\n",(float)(end - start) / CLOCKS_PER_SEC);
+#endif
+    free(ref_hash);
+    free(que_hash);
+    free(rdb);
+    free(rdb_rev);
+    free(swlen);
+    free(qp_db);
+#ifdef SWDB
+    m_end = clock();
+    fprintf(stderr,"total execution time:%f\n",(float)(m_end - m_start) / CLOCKS_PER_SEC);
+#endif
+    
+}
+//sort
+
+//un opt
+
+
+void ksw_extend_batch2_filter_unopt(swrst_t* swrts, uint32_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
 #ifdef SWDB
     clock_t m_start,m_end;
@@ -2380,7 +2714,7 @@ void ksw_extend_batch_origin(swrst_t* swrts, size_t size, int m, const int8_t *m
         }
     }
 }
-void ksw_extend_batch_origin_unopt(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
+void ksw_extend_batch_origin_filter_unopt(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int zdrop)
 {
     //sort
     assert(m==5);
@@ -2404,6 +2738,8 @@ typedef struct
 }i_vec;
 //v_id would indicate the value's needed to be extend in swrts, which should not be zero.
 //main process of extention of batch of seed with w parameter
+
+//sort+cache
 void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     //sort
     assert(m==5);
@@ -2662,6 +2998,269 @@ void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8
     free(rdb_rev);
     free(qp_db);
 }
+//cache
+void ksw_extend_batchw_process_i16_unsort(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
+    //sort
+    assert(m==5);
+    uint64_t* swlen = malloc(sizeof(int64_t)*v_id.n);//should record qlen rlen
+    int size = v_id.n;
+    if(size==0)return;
+    for(uint32_t i=0; i<size; ++i)
+    {
+        int id = v_id.a[i];
+        uint64_t tval=(uint64_t)(id)<<32;
+        swseq_t* tseq = swrts[id].sw_seq;
+        uint32_t qlen = tseq->qlen;
+        uint32_t mx=qlen;
+        tval|=mx;
+        swlen[i]=tval;
+    }
+//    ks_introsort(uint64_t,size,swlen);
+    
+    int ptr = 0;
+    //zero
+    int threashold = 0;
+    while(ptr<size&&(uint32_t)swlen[ptr]==0) ptr++;
+    
+    //threashold_zero
+    int none_zero = ptr;
+    while((uint32_t)swlen[ptr]<threashold&&ptr<size) ptr++;
+    
+    if((size-ptr)%PROCESSBATCH<=PROCESSBATCH/2)
+    {
+        ptr+=(size-ptr)%PROCESSBATCH;
+    }
+    //fprintf(stderr,"%d,%d,%d\n",ptr,size,size-ptr);
+    for(int i=none_zero; i<ptr; i++)
+    {
+        int idx = swlen[i]>>32;
+        swrst_t *sw = swrts+idx;
+        swseq_t *seq = sw->sw_seq;
+        sw->score = ksw_extend2(seq->qlen, seq->query, seq->rlen, seq->ref, 5, mat, o_del, e_del, o_ins, e_ins, sw->w, end_bonus, zdrop, sw->h0, &sw->qle, &sw->tle, &sw->gtle, &sw->gscore, &sw->max_off);
+    }
+    uint32_t resize = size-ptr;
+    uint32_t resize_segs = (resize+BATCHSIZE-1)/BATCHSIZE;//skip zero ones
+    uint32_t aligned_resize = resize_segs*BATCHSIZE;
+    uint64_t *swlen_resized = swlen+ptr;
+    if(resize==0)return;
+    packed_hash_t* ref_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
+    memset(ref_hash,0,sizeof(packed_hash_t)*aligned_resize);
+    
+    packed_hash_t* que_hash = malloc(sizeof(packed_hash_t)*aligned_resize);
+    memset(que_hash,0,sizeof(packed_hash_t)*aligned_resize);
+    
+    
+    //init
+    int ref_global_id_x=0;
+    {
+        int ref_aligned_len=0;
+        int ref_global_batch_id = 0;
+        int rlen_max = 0;
+        for(int i=0; i<resize_segs; i++)
+        {
+            for(int j=0,k=i*BATCHSIZE; k<resize&&j<BATCHSIZE; j++,k++)
+            {
+                swrst_t *sw = swrts+(swlen_resized[k]>>32);
+                swseq_t *seq = sw->sw_seq;
+                int rlen = seq->rlen;
+                rlen_max = rlen_max>rlen?rlen_max:rlen;
+            }
+            ref_aligned_len = ((rlen_max+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
+            ref_global_batch_id = ref_global_id_x*BATCHSIZE;
+            for(int j=0; j<BATCHSIZE; j++)
+            {
+                packed_hash_t *cur_ref_hash = ref_hash+i*BATCHSIZE+j;
+                cur_ref_hash->local_id_y=j;
+                cur_ref_hash->global_batch_id=ref_global_batch_id;
+                cur_ref_hash->alined=ref_aligned_len;
+                cur_ref_hash->batch_max_len=rlen_max;
+            }
+            ref_global_id_x+=ref_aligned_len;
+        }
+    }
+    
+    int que_global_id_x=0;
+    {
+        int que_aligned_len=0;
+        int que_global_batch_id = 0;
+        int qlen_max = 0;
+        for(int i=0; i<resize_segs; i++)
+        {
+            for(int j=0,k=i*BATCHSIZE; k<resize&&j<BATCHSIZE; j++,k++)
+            {
+                swrst_t *sw = swrts+(swlen_resized[k]>>32);
+                swseq_t *seq = sw->sw_seq;
+                int qlen = seq->qlen;
+                qlen_max = qlen_max>qlen?qlen_max:qlen;
+            }
+            que_aligned_len = ((qlen_max+BATCHSIZE-1)/BATCHSIZE)*BATCHSIZE;
+            que_global_batch_id = que_global_id_x*BATCHSIZE;
+            
+            for(int j=0; j<BATCHSIZE; j++)
+            {
+                packed_hash_t *cur_que_hash = que_hash+i*BATCHSIZE+j;
+                cur_que_hash->local_id_y=j;
+                cur_que_hash->global_batch_id=que_global_batch_id;
+                cur_que_hash->alined=que_aligned_len;
+                cur_que_hash->batch_max_len=qlen_max;
+            }
+            que_global_id_x+=que_aligned_len;
+        }
+    }
+    /**********************/
+    //constructing reference
+    uint8_t* rdb = malloc(ref_global_id_x*BATCHSIZE);
+    uint8_t* rdb_rev = malloc(ref_global_id_x*BATCHSIZE);
+    memset(rdb,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    memset(rdb_rev,0,sizeof(uint8_t)*ref_global_id_x*BATCHSIZE);
+    
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* ref_hash_t = &ref_hash[i];
+        ref_hash_t->len=seq->rlen;
+        
+        uint8_t* db_ptr = rdb+ref_hash_t->global_batch_id+ref_hash_t->local_id_y*ref_hash_t->alined;
+        memcpy(db_ptr,seq->ref,seq->rlen*sizeof(uint8_t));
+    }
+    //reverse reference
+    for(int gride_batch_id = 0; gride_batch_id<resize_segs; gride_batch_id++)
+    {
+        packed_hash_t* ref_hash_t = &ref_hash[gride_batch_id*BATCHSIZE];
+        uint8_t* db_ptr = rdb + ref_hash_t->global_batch_id;
+        uint8_t* db_rev_ptr = rdb_rev + ref_hash_t->global_batch_id;
+        int x = BATCHSIZE;
+        int y = ref_hash_t->alined;
+        transpose_u8(db_ptr, db_rev_ptr, x, y);
+    }
+    /**********************/
+    //query profile
+    int16_t* qp_db = malloc(que_global_id_x*BATCHSIZE*m*sizeof(int16_t));//should be usingned ,change in the future
+    memset(qp_db,(int16_t)-1,sizeof(int16_t)*que_global_id_x*BATCHSIZE*m);
+    
+    int max_m=0;
+    int k = m * m;
+    {
+        int i=0;
+        for (max_m = 0; i < k; ++i) // get the max score
+            max_m = max_m > mat[i]? max_m : mat[i];
+    }
+#ifdef DEBUG
+    fprintf(stderr,"the mx m is %d/%d:%d\n",max_m,mat[0],m);
+#endif
+    for(int i=0; i<resize; i++)
+    {
+        swrst_t *sw = swrts+(swlen_resized[i]>>32);
+        swseq_t *seq = sw->sw_seq;
+        packed_hash_t* que_hash_cur_ptr = &que_hash[i];
+        
+        que_hash_cur_ptr->len=seq->qlen;
+        //fprintf(stderr, "%d:%d ",seq->qlen,que_hash_cur_ptr->len);
+        
+        int qlen =seq->qlen;
+        //assert(qlen==1);
+        int aligned = que_hash_cur_ptr->alined;
+        
+        int16_t* qp2 = qp_db+m*(que_hash_cur_ptr->global_batch_id+que_hash_cur_ptr->local_id_y*que_hash_cur_ptr->alined);
+        
+        //fprintf(stderr,"check%d\n",qp2[0]);
+        const uint8_t* query =seq->query;
+        for (int k = 0, l = 0; k < m; ++k) {
+            const int8_t *p = &mat[k*m];
+            int j = 0;
+            for (; j < qlen; ++j) qp2[l++] = p[query[j]];
+            for(;j<aligned; ++j) qp2[l++]=0;
+        }
+    }
+    /*********************/
+    
+    uint64_t* swlen_batch_id = swlen_resized;//resize
+    packed_hash_t * ref_hash_batch_ptr = ref_hash;
+    packed_hash_t * que_hash_batch_ptr = que_hash;
+    uint64_t* swlen_nxt_id = swlen_resized;//resize
+    uint32_t remain = resize;
+    uint32_t next_process = BATCHSIZE;
+    for(int seg_idx=0; seg_idx<resize_segs;++seg_idx)
+    {
+        swlen_batch_id = swlen_resized+seg_idx* BATCHSIZE;
+        ref_hash_batch_ptr = ref_hash + seg_idx*BATCHSIZE;
+        que_hash_batch_ptr = que_hash + seg_idx*BATCHSIZE;
+        int16_t g_qle[BATCHSIZE];
+        int16_t g_tle[BATCHSIZE];
+        int16_t g_gtle[BATCHSIZE];
+        int16_t g_gscore[BATCHSIZE];
+        int16_t g_max_off[BATCHSIZE];
+        int16_t g_score[BATCHSIZE];
+        int16_t g_h0[BATCHSIZE];// = sw->h0;
+        swlen_nxt_id = swlen_batch_id;
+        //threoretically wont work
+        int batch_idx = 0;
+        next_process = remain<BATCHSIZE?remain:BATCHSIZE;
+#ifdef DEBUG
+        fprintf(stderr,"remaining: %d\n",remain);
+#endif
+        remain-=BATCHSIZE;
+        for(batch_idx=0; batch_idx<BATCHSIZE; batch_idx++)
+        {
+            g_h0[batch_idx] = 0;
+        }
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
+        {
+            swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
+            g_h0[batch_idx] = sw->h0;
+            swlen_nxt_id++;
+        }
+        //process 16 query at a time
+        batch_sw_w_core_i16(ref_hash_batch_ptr,que_hash_batch_ptr,
+                            rdb_rev,
+                            qp_db,
+                            g_h0,//input
+                            
+                            m,
+                            
+                            max_m,
+                            o_del,
+                            e_del,
+                            o_ins,
+                            e_ins,
+                            w,
+                            end_bonus,
+                            zdrop,
+                            
+                            g_qle,//result
+                            g_tle,
+                            g_gtle,
+                            g_gscore,
+                            g_max_off,
+                            g_score
+                            
+                            );
+        swlen_nxt_id = swlen_batch_id;
+        for(batch_idx=0; batch_idx<next_process; batch_idx++)
+        {
+            swrst_t *sw = swrts+((*swlen_nxt_id)>>32);
+            sw->qle = g_qle[batch_idx];
+            sw->tle = g_tle[batch_idx];
+            sw->gtle = g_gtle[batch_idx];
+            sw->gscore = g_gscore[batch_idx];
+            sw->max_off = g_max_off[batch_idx];
+            sw->score = g_score[batch_idx];
+            swlen_nxt_id++;
+        }
+    }
+    
+    free(swlen);
+    free(ref_hash);
+    free(que_hash);
+    free(rdb);
+    free(rdb_rev);
+    free(qp_db);
+}
+//sort
+
+//no opt
+
 #define PROCESSBATCH16 16
 
 
@@ -2859,6 +3458,7 @@ void ksw_extend_batchw(swrst_t* swrts, size_t size, int m, const int8_t *mat, in
 }
 
 //make sure the w value works
+//sort + cache
 void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
 {
     assert(m==5);
@@ -2918,7 +3518,69 @@ void ksw_extend_batchw2(swrst_t* swrts, size_t size, int m, const int8_t *mat, i
     kv_destroy(swrstid_cur);
     kv_destroy(swrstid_nxt);
 }
+//cache
+void ksw_extend_batchw2_unsort(swrst_t* swrts, size_t size, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int ini_w, int end_bonus, int zdrop)
+{
+    assert(m==5);
+    
+    //task index indicator
+    i_vec swrstid_cur,swrstid_nxt, swrstid_tmp;
+    swrstid_cur.a=malloc(sizeof(int)*size);
+    swrstid_cur.m=size;
+    swrstid_cur.n=0;
+    swrstid_nxt.a=malloc(sizeof(int)*size);
+    swrstid_nxt.m=size;
+    swrstid_nxt.n=0;
+    
+    //init work task
+    for(int i=0; i<size;++i)
+    {
+        swrst_t *sw = swrts+i;
+        swseq_t *seq = sw->sw_seq;
+        if(seq->qlen!=0)
+        {
+            sw->w=ini_w;
+            kv_push(int, swrstid_cur, i);
+        }
+    }
+    
+    //    swrst_t* ano_swrts = malloc(sizeof(swrst_t)*size);
+    //    memcpy(ano_swrts,swrts,sizeof(swrst_t)*size);
+    
+    for (int i = 0; i < MAX_BAND_TRY; ++i) {
+        int w =ini_w << i;
+        for(int process_id=0; process_id<swrstid_cur.n; process_id++)
+        {
+            swrst_t* cur_ptr = &swrts[swrstid_cur.a[process_id]];
+            cur_ptr->pre_score =  cur_ptr->score;
+        }
+        
+        ksw_extend_batchw_process_i16_unsort(swrts, swrstid_cur, 5, mat, o_del, e_del, o_ins, e_ins, w, end_bonus, zdrop);
+        
+        for(int process_id=0; process_id<swrstid_cur.n; process_id++)
+        {
+            swrst_t* cur_ptr = &swrts[swrstid_cur.a[process_id]];
+            if ( cur_ptr->score == cur_ptr->pre_score || cur_ptr->max_off< (w>>1) + (w>>2))
+            {
+                continue;
+            }
+            cur_ptr->w=w;
+            kv_push(int,swrstid_nxt,swrstid_cur.a[process_id]);
+        }
+        if(swrstid_cur.n==0)break;
+        swrstid_tmp=swrstid_nxt;
+        swrstid_nxt=swrstid_cur;
+        swrstid_cur=swrstid_tmp;
+        swrstid_nxt.n=0;
+    }
+    
+    
+    kv_destroy(swrstid_cur);
+    kv_destroy(swrstid_nxt);
+}
+//sort
 
+//no opt
 
 //#define SWBATCHDB
 #ifdef SWBATCHDB
@@ -2975,12 +3637,12 @@ int main(int argc, char** argv)
     fprintf(stderr, "[M::%s]original Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     rtime = realtime();
-    ksw_extend_batch2_unopt(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
+    ksw_extend_batch2_filter_unopt(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
     //time
     fprintf(stderr, "[M::%s]simdunopt Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     rtime = realtime();
-    ksw_extend_batch_origin_unopt(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
+    ksw_extend_batch_origin_filter_unopt(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
     //time
     fprintf(stderr, "[M::%s]originalunopt Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
