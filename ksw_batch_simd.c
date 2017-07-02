@@ -2975,7 +2975,7 @@ int main(int argc, char** argv)
     fprintf(stderr, "[M::%s]original Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
     rtime = realtime();
-    ksw_extend_batch2(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
+    ksw_extend_batch2_unopt(nsrt, process_sze, g_m, g_mat[0], g_o_del, g_e_del, g_o_ins, g_e_ins,g_zdrop);
     //time
     fprintf(stderr, "[M::%s]simdunopt Processed %ld reads in %.3f CPU sec, %.3f real sec\n", __func__, nread, cputime() - ctime, realtime() - rtime);
     
