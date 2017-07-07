@@ -111,7 +111,7 @@ void store2(swrst_t* data, size_t size, const char* filename)
     fwrite(&size, sizeof(size_t), 1, output);
     for(int i=0; i<size; i++)
     {
-        fwrite(data, sizeof(swrst_t), 1, output);
+        fwrite(data+i, sizeof(swrst_t), 1, output);
         
         int qlen = data[i].sw_seq->qlen;
         int rlen = data[i].sw_seq->rlen;
@@ -142,11 +142,11 @@ size_t load2(swrst_t** data, const char* filename)
     
     for(int i=0; i<size; i++)
     {
-        fread(*data, sizeof(swrst_t), 1, input);
+        fread(*data+i, sizeof(swrst_t), 1, input);
         int qlen;
         int rlen;
         fread(&qlen, sizeof(int), 1, input);
-        fread(&rlen, sizeof(int), 1, input);
+        
         swseq_t* seq = malloc(sizeof(swseq_t));
         seq->qlen = qlen;
         seq->rlen = rlen;
@@ -160,6 +160,8 @@ size_t load2(swrst_t** data, const char* filename)
         else{
             q = NULL;
         }
+        
+        fread(&rlen, sizeof(int), 1, input);
         
         if(rlen>0)
         {

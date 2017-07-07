@@ -2918,6 +2918,12 @@ void seed_extension_mid_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
     free(b_sw_seq_right);
     free(b_sw_vals_right);
 }
+//#define SW_STORE
+#ifdef SW_STORE
+//static size_t size = 8000;
+static size_t remain = SIZE;
+int iszero=0;
+#endif
 
 void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
 {
@@ -2977,7 +2983,31 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
             cur_srt_l->score = s->len * opt->a;
         }
     }
-    
+    //store left extension
+#ifdef SW_STORE
+    size_t nxt_prx;
+    if(remain>nxt_process_pext->n)
+    {
+        nxt_prx = nxt_process_pext->n;
+    }
+    else
+    {
+        nxt_prx = remain;
+    }
+    remain-=nxt_prx;
+    store2(b_sw_vals_left, nxt_prx, "ksw_extend.bin");
+    store_config(opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+    swrst_t* tmp = malloc(sizeof(swrst_t)*process_size);
+//load2(&tmp, "ksw_extend_4000.bin");
+    if(iszero==0)
+    {
+        if(remain==0)
+        {
+            iszero=1;
+            fprintf(stderr,"finish storing\n");
+        }
+    }
+#endif
     //left extension main process
     ksw_extend_batchw2(b_sw_vals_left, nxt_process_pext->n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip5, opt->zdrop);
     
@@ -3015,7 +3045,26 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
             cur_seq_r->rlen = 0;
         }
     }
-    
+#ifdef SW_STORE
+    if(remain>nxt_process_pext->n)
+    {
+        nxt_prx = nxt_process_pext->n;
+    }
+    else
+    {
+        nxt_prx = remain;
+    }
+    remain-=nxt_prx;
+    store2(b_sw_vals_right, nxt_prx, "ksw_extend_4000.bin");
+    if(iszero==0)
+    {
+        if(remain==0)
+        {
+            iszero=1;
+            fprintf(stderr,"finish storing\n");
+        }
+    }
+#endif
     //right extension main process
     ksw_extend_batchw2(b_sw_vals_right, nxt_process_pext->n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip3, opt->zdrop);
     //post process
