@@ -3074,8 +3074,8 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         sw_ptr= malloc(sizeof(swrst_t)*remain);
         for(int i=0; i<nxt_process_pext->n&&i<remain; i++)
         {
-            if(b_sw_vals_left[i].sw_seq->qlen==0)continue;
-            sw_ptr[counter++]=b_sw_vals_left[i];
+            if(b_sw_vals_right[i].sw_seq->qlen==0)continue;
+            sw_ptr[counter++]=b_sw_vals_right[i];
         }
         
         if(remain>counter)
