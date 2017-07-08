@@ -11,9 +11,16 @@
 #define ERR_NEXTLINE fprintf(stderr, "\n")
 void store(swrst_t* data, size_t size, const char* filename)
 {
+    FILE* input = fopen(filename,"rb");
+    int base;
+    fread(&base, sizeof(size_t), 1, input);
+    fclose(input);
     FILE* output = fopen(filename,"ab+");
+    size = base+size;
     assert(output!=NULL);
+    fseek(output,0,SEEK_SET);
     fwrite(&size, sizeof(size_t), 1, output);
+    fseek(output,0,SEEK_END);
 //    for(int i=0; i<size; i++)
 //    {
         fwrite(data, sizeof(swrst_t)*size, 1, output);
