@@ -2919,7 +2919,10 @@ void seed_extension_mid_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
     free(b_sw_vals_right);
 }
 //#define SW_STORE
+//#define SIZE 4000
+
 #ifdef SW_STORE
+
 //static size_t size = 8000;
 static size_t remain = SIZE;
 int iszero=0;
@@ -2984,28 +2987,45 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         }
     }
     //store left extension
+
 #ifdef SW_STORE
-    size_t nxt_prx;
-    if(remain>nxt_process_pext->n)
-    {
-        nxt_prx = nxt_process_pext->n;
-    }
-    else
-    {
-        nxt_prx = remain;
-    }
-    remain-=nxt_prx;
-    store2(b_sw_vals_left, nxt_prx, "ksw_extend.bin");
-    store_config(opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
-    swrst_t* tmp = malloc(sizeof(swrst_t)*process_size);
-//load2(&tmp, "ksw_extend_4000.bin");
+    size_t nxt_count;
+    size_t counter=0;
+    swrst_t* sw_ptr;
+    kstring_t kst;
+    kst.l=0;
+    kst.m=0;
+    kst.s = malloc(sizeof(char));
+    ksprintf(&kst,"ksw_extend_%d.bin",SIZE);
+//    fprintf(stderr,"%s\n",kst.s);
     if(iszero==0)
     {
+        sw_ptr= malloc(sizeof(swrst_t)*remain);
+        for(int i=0; i<nxt_process_pext->n&&i<remain; i++)
+        {
+            if(b_sw_vals_left[i].sw_seq->qlen==0)continue;
+            sw_ptr[counter++]=b_sw_vals_left[i];
+        }
+        if(remain>counter)
+        {
+            nxt_count = counter;
+        }
+        else
+        {
+            nxt_count = remain;
+        }
+        remain-=nxt_count;
+        store2(sw_ptr, nxt_count,kst.s);
+        store_config(opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->zdrop);
+ //   swrst_t* tmp = malloc(sizeof(swrst_t)*process_size);
+//load2(&tmp, "ksw_extend_4000.bin");
+
         if(remain==0)
         {
             iszero=1;
-            fprintf(stderr,"finish storing\n");
+            fprintf(stderr,"finish storing with size %d\n",SIZE);
         }
+        free(sw_ptr);
     }
 #endif
     //left extension main process
@@ -3046,24 +3066,35 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         }
     }
 #ifdef SW_STORE
-    if(remain>nxt_process_pext->n)
-    {
-        nxt_prx = nxt_process_pext->n;
-    }
-    else
-    {
-        nxt_prx = remain;
-    }
-    remain-=nxt_prx;
-    store2(b_sw_vals_right, nxt_prx, "ksw_extend_4000.bin");
+    counter=0;
     if(iszero==0)
     {
+        sw_ptr= malloc(sizeof(swrst_t)*remain);
+        for(int i=0; i<nxt_process_pext->n&&i<remain; i++)
+        {
+            if(b_sw_vals_left[i].sw_seq->qlen==0)continue;
+            sw_ptr[counter++]=b_sw_vals_left[i];
+        }
+        
+        if(remain>counter)
+        {
+            nxt_count = counter;
+        }
+        else
+        {
+            nxt_count = remain;
+        }
+        remain-=nxt_count;
+        store2(sw_ptr, nxt_count, kst.s);
+
         if(remain==0)
         {
             iszero=1;
-            fprintf(stderr,"finish storing\n");
+            fprintf(stderr,"finish storing with size %d\n",SIZE);
         }
+        free(sw_ptr);
     }
+
 #endif
     //right extension main process
     ksw_extend_batchw2(b_sw_vals_right, nxt_process_pext->n, 5, opt->mat, opt->o_del, opt->e_del, opt->o_ins, opt->e_ins, opt->w, opt->pen_clip3, opt->zdrop);
