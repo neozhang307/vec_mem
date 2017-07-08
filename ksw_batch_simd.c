@@ -11,16 +11,9 @@
 #define ERR_NEXTLINE fprintf(stderr, "\n")
 void store(swrst_t* data, size_t size, const char* filename)
 {
-    FILE* input = fopen(filename,"rb");
-    int base;
-    fread(&base, sizeof(size_t), 1, input);
-    fclose(input);
-    FILE* output = fopen(filename,"ab+");
-    size = base+size;
+    FILE* output = fopen(filename,"wb+");
     assert(output!=NULL);
-    fseek(output,0,SEEK_SET);
     fwrite(&size, sizeof(size_t), 1, output);
-    fseek(output,0,SEEK_END);
 //    for(int i=0; i<size; i++)
 //    {
         fwrite(data, sizeof(swrst_t)*size, 1, output);
@@ -4400,7 +4393,7 @@ typedef struct
 void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8_t *mat, int o_del, int e_del, int o_ins, int e_ins, int w,  int end_bonus, int zdrop){
     //sort
     assert(m==5);
-    uint64_t* swlen = (uint64_t*)malloc(sizeof(uint64_t)*v_id.n);//should record qlen rlen
+    uint64_t* swlen = malloc(sizeof(int64_t)*v_id.n);//should record qlen rlen
     int size = v_id.n;
     if(size==0)return;
     for(uint32_t i=0; i<size; ++i)
@@ -4647,9 +4640,7 @@ void ksw_extend_batchw_process_i16(swrst_t* swrts, i_vec v_id, int m, const int8
             swlen_nxt_id++;
         }
     }
-    swlen_batch_id=NULL;
-    swlen_nxt_id=NULL;
-    swlen_resized=NULL;
+    
     free(swlen);
     free(ref_hash);
     free(que_hash);
