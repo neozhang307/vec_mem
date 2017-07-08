@@ -3024,6 +3024,8 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         {
             iszero=1;
             fprintf(stderr,"finish storing with size %d\n",SIZE);
+            free(sw_ptr);
+            exit(0);
         }
         free(sw_ptr);
     }
@@ -3091,6 +3093,8 @@ void seed_extension_simd_batch(const mem_opt_t *opt, pext_vec *nxt_process_pext)
         {
             iszero=1;
             fprintf(stderr,"finish storing with size %d\n",SIZE);
+            free(sw_ptr);
+            exit(0);
         }
         free(sw_ptr);
     }
