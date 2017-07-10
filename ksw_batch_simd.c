@@ -2113,7 +2113,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
             cmp_gen_result(cond, v_tmp_maxoff, v_max_off, tmp_out_true, tmp_out_false, v_max_off);
             
-            flag=1;
+            //flag=1;
             
             if(zdrop>0&&!_mm_movemask_epi8(cond))//all false
             {
@@ -2130,10 +2130,10 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
                 v_tmp7 = _mm_subs_epi16(v_tmp6, v_tmp4);
                 v_tmp8 = _mm_adds_epi16(v_tmp6, v_tmp5);
-                cond2 = _mm_cmplt_epi16(v_tmp7, v_zdrop);
+                cond2 = _mm_cmpgt_epi16(v_tmp7, v_zdrop);
                 cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
                 
-                cond3 = _mm_cmplt_epi16(v_tmp8, v_zdrop);
+                cond3 = _mm_cmpgt_epi16(v_tmp8, v_zdrop);
                 cmp_int16flag_change(cond3, v_zero, cond3, tmp_h, tmp_l);
                 
                 cond2 = _mm_and_si128(cond, cond2);
@@ -2143,7 +2143,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(_mm_movemask_epi8(cond))flag=1;
                 
             }
-            
+            if(flag==1)break;
 #ifndef NPROEND
             
             v_tmp1 = v_end;
@@ -2201,8 +2201,8 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
     free(qp_buff);
     free(qp_buff_rev);
     
-}
 
+}
 void batch_sw_w_core_i16_notranspose(packed_hash_t* ref_hash, packed_hash_t* que_hash,
                          uint8_t* rdb,
                          int16_t* qp_db,
@@ -2591,7 +2591,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
             v_tmp_maxoff = _mm_max_epi16(v_tmp_maxoff, v_max_off);
             cmp_gen_result(cond, v_tmp_maxoff, v_max_off, tmp_out_true, tmp_out_false, v_max_off);
             
-            flag=1;
+//            flag=1;
             
             if(zdrop>0&&!_mm_movemask_epi8(cond))//all false
             {
@@ -2608,10 +2608,10 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 
                 v_tmp7 = _mm_subs_epi16(v_tmp6, v_tmp4);
                 v_tmp8 = _mm_adds_epi16(v_tmp6, v_tmp5);
-                cond2 = _mm_cmplt_epi16(v_tmp7, v_zdrop);
+                cond2 = _mm_cmpgt_epi16(v_tmp7, v_zdrop);
                 cmp_int16flag_change(cond2, v_zero, cond2, tmp_h, tmp_l);
                 
-                cond3 = _mm_cmplt_epi16(v_tmp8, v_zdrop);
+                cond3 = _mm_cmpgt_epi16(v_tmp8, v_zdrop);
                 cmp_int16flag_change(cond3, v_zero, cond3, tmp_h, tmp_l);
                 
                 cond2 = _mm_and_si128(cond, cond2);
@@ -2621,7 +2621,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 if(_mm_movemask_epi8(cond))flag=1;
                 
             }
-            
+            if(flag==1)break;
 #ifndef NPROEND
             
             v_tmp1 = v_end;
