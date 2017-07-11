@@ -3453,7 +3453,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
     int threashold = 10;
     int batch = n/threashold;
     batch = batch==0?1:batch;
-    batch=((batch-16+1)/16)*16;
+    batch=((batch+16-1)/16)*16;
     int batch_size = batch*((opt->flag&MEM_F_PE)?2:1) ;
     
 	ctime = cputime(); rtime = realtime();
