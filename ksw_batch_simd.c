@@ -2140,7 +2140,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 cond3 = _mm_andnot_si128(cond, cond3);
                 
                 cond = _mm_or_si128(cond2, cond3);
-                if(_mm_movemask_epi8(cond))flag=1;
+                if(_mm_movemask_epi8(cond)==0xffff)flag=1;
                 
             }
             if(flag==1)break;
@@ -2618,7 +2618,7 @@ out = (__m128i)_mm_or_si128(tmp_out_true,tmp_out_false);\
                 cond3 = _mm_andnot_si128(cond, cond3);
                 
                 cond = _mm_or_si128(cond2, cond3);
-                if(_mm_movemask_epi8(cond))flag=1;
+                if(_mm_movemask_epi8(cond)==0xffff)flag=1;
                 
             }
             if(flag==1)break;
