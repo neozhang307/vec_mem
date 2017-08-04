@@ -3450,7 +3450,7 @@ void mem_process_seqs(const mem_opt_t *opt, const bwt_t *bwt, const bntseq_t *bn
 	double ctime, rtime;
 	int i;
 
-    int threashold = 10;
+    int threashold = 300;
     int batch = n/threashold;
     batch = batch==0?1:batch;
     batch=((batch+16-1)/16)*16;
